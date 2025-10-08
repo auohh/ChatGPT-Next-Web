@@ -200,8 +200,8 @@ export class ChatGPTApi implements LLMApi {
       options.config.model.startsWith("o1") ||
       options.config.model.startsWith("o3") ||
       options.config.model.startsWith("o4-mini");
-    const isGpt5 =  options.config.model.startsWith("gpt-5");
-    const isGpt5NotStream =  isGpt5 && !options.config.model.startsWith("gpt-5-chat");
+    const isGpt5 = options.config.model?.startsWith("gpt-5");
+    const isGpt5NonChat = isGpt5 && !options.config.model.startsWith("gpt-5-chat");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
@@ -272,7 +272,8 @@ export class ChatGPTApi implements LLMApi {
 
     console.log("[Request] openai payload: ", requestPayload);
 
-    const shouldStream = !isDalle3 && !!options.config.stream || !isGpt5NotStream;
+
+    const shouldStream = !!options.config.stream && !isDalle3 && !isGpt5NonChat;
     const controller = new AbortController();
     options.onController?.(controller);
 
