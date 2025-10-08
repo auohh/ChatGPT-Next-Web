@@ -240,10 +240,17 @@ export class ChatGPTApi implements LLMApi {
       };
 
       if (isGpt5) {
+    // see https://platform.openai.com/docs/guides/latest-model?reasoning-effort-mode=chat#gpt-5-parameter-compatibility
+  	delete requestPayload.temperature;
+  	delete requestPayload.top_p;
+  	delete requestPayload.logprobs;
+  	delete requestPayload.presence_penalty;
   	// Remove max_tokens if present
   	delete requestPayload.max_tokens;
   	// Add max_completion_tokens (or max_completion_tokens if that's what you meant)
   	requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
+  	requestPayload["stream"] = false;
+    
 
       } else if (isO1OrO3) {
         // by default the o1/o3 models will not attempt to produce output that includes markdown formatting
