@@ -54,6 +54,7 @@ export enum Path {
   Artifacts = "/artifacts",
   SearchChat = "/search-chat",
   McpMarket = "/mcp-market",
+  Prompt = "/prompt",
 }
 
 export enum ApiPath {
@@ -493,7 +494,7 @@ export const VISION_MODEL_REGEXES = [
   /o3/,
   /o4-mini/,
   /grok-4/i,
-  /gpt-5/
+  /gpt-5/,
 ];
 
 export const EXCLUDE_VISION_MODEL_REGEXES = [/claude-3-5-haiku-20241022/];
@@ -561,7 +562,7 @@ const googleModels = [
   "gemini-2.0-pro-exp",
   "gemini-2.0-pro-exp-02-05",
   "gemini-2.5-pro-preview-06-05",
-  "gemini-2.5-pro"
+  "gemini-2.5-pro",
 ];
 
 const anthropicModels = [

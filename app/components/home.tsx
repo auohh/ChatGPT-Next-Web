@@ -30,6 +30,7 @@ import { type ClientApi, getClientApi } from "../client/api";
 import { useAccessStore } from "../store";
 import clsx from "clsx";
 import { initializeMcpSystem, isMcpEnabled } from "../mcp/actions";
+import { PromptModalProvider, usePromptModal } from "./use-prompt-modal";
 
 export function Loading(props: { noLogo?: boolean }) {
   return (
@@ -77,6 +78,13 @@ const Sd = dynamic(async () => (await import("./sd")).Sd, {
 
 const McpMarketPage = dynamic(
   async () => (await import("./mcp-market")).McpMarketPage,
+  {
+    loading: () => <Loading noLogo />,
+  },
+);
+
+const PromptModal = dynamic(
+  async () => (await import("./prompt")).PromptModal,
   {
     loading: () => <Loading noLogo />,
   },
@@ -157,9 +165,12 @@ export function WindowContent(props: { children: React.ReactNode }) {
   );
 }
 
-function Screen() {
+function ScreenContent() {
   const config = useAppConfig();
   const location = useLocation();
+  const { showPromptModal, openPromptModal, closePromptModal } =
+    usePromptModal();
+
   const isArtifact = location.pathname.includes(Path.Artifacts);
   const isHome = location.pathname === Path.Home;
   const isAuth = location.pathname === Path.Auth;
@@ -203,6 +214,7 @@ function Screen() {
             <Route path={Path.Settings} element={<Settings />} />
             <Route path={Path.McpMarket} element={<McpMarketPage />} />
           </Routes>
+          {showPromptModal && <PromptModal onClose={closePromptModal} />}
         </WindowContent>
       </>
     );
@@ -217,6 +229,14 @@ function Screen() {
     >
       {renderContent()}
     </div>
+  );
+}
+
+function Screen() {
+  return (
+    <PromptModalProvider>
+      <ScreenContent />
+    </PromptModalProvider>
   );
 }
 

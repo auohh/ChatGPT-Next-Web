@@ -40,6 +40,7 @@ export const getBuildConfig = () => {
     buildMode,
     isApp,
     template: process.env.DEFAULT_INPUT_TEMPLATE ?? DEFAULT_INPUT_TEMPLATE,
+    promptUrl: process.env.NEXT_PUBLIC_PROMPT_URL ?? "http://localhost:38081/",
   };
 };
 

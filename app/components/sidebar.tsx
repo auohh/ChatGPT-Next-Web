@@ -12,10 +12,12 @@ import MaskIcon from "../icons/mask.svg";
 import McpIcon from "../icons/mcp.svg";
 import DragIcon from "../icons/drag.svg";
 import DiscoveryIcon from "../icons/discovery.svg";
+import PromptIcon from "../icons/prompt.svg";
 
 import Locale from "../locales";
 
 import { useAppConfig, useChatStore } from "../store";
+import { usePromptModal } from "./use-prompt-modal";
 
 import {
   DEFAULT_SIDEBAR_WIDTH,
@@ -232,6 +234,7 @@ export function SideBar(props: { className?: string }) {
   const config = useAppConfig();
   const chatStore = useChatStore();
   const [mcpEnabled, setMcpEnabled] = useState(false);
+  const { openPromptModal } = usePromptModal();
 
   useEffect(() => {
     // 检查 MCP 是否启用
@@ -280,6 +283,13 @@ export function SideBar(props: { className?: string }) {
               shadow
             />
           )}
+          <IconButton
+            icon={<PromptIcon />}
+            text={shouldNarrow ? undefined : "Prompt"}
+            className={styles["sidebar-bar-button"]}
+            onClick={openPromptModal}
+            shadow
+          />
           <IconButton
             icon={<DiscoveryIcon />}
             text={shouldNarrow ? undefined : Locale.Discovery.Name}
