@@ -210,6 +210,10 @@ const cn = {
       Failed: "更新失败",
     },
     SendKey: "发送键",
+    HistoryMessageCount: {
+      Title: "历史消息数",
+      SubTitle: "附带上下文的消息数量",
+    },
     Theme: "主题",
     TightBorder: "无边框模式",
     SendPreviewBubble: {

@@ -100,6 +100,109 @@
   }
 }
 
+// 历史消息数输入框 - 覆盖ChatAction默认行为
+.chat-input-action {
+  // 为历史消息输入框覆盖默认的文本隐藏行为
+  &.history-input-action {
+    .text {
+      opacity: 1 !important;  // 默认显示文本
+      transform: translateX(0) !important;  // 不隐藏文本
+      pointer-events: auto !important;  // 允许交互
+      padding-left: 2px;  // 与图标的间距，进一步减少
+    }
+
+    // 覆盖默认的悬停宽度变化
+    &:hover {
+      width: auto !important;
+      transition-delay: 0s !important;
+    }
+  }
+
+  .history-number-field {
+    width: 42px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    color: #1a1a1a;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    outline: none;
+    cursor: text;
+    padding: 0 0px;
+    margin: 0;
+    border-radius: 3px;
+    line-height: 1.2;
+    transition: all 0.2s ease;
+
+    &::-webkit-inner-spin-button,
+    &::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+      display: none;
+    }
+
+    &::-moz-number-input {
+      -moz-appearance: textfield;
+    }
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    &:focus {
+      background: rgba(29, 147, 171, 0.08);
+    }
+
+    // 确保数字输入框在工具栏中对齐
+    & {
+      -webkit-appearance: none;
+      -moz-appearance: textfield;
+      appearance: none;
+    }
+  }
+}
+
+// 移动端优化
+@media (max-width: 768px) {
+  .chat-input-action {
+    // 确保移动端也能覆盖ChatAction默认行为
+    &.history-input-action {
+      .text {
+        opacity: 1 !important;
+        transform: translateX(0) !important;
+        pointer-events: auto !important;
+        padding-left: 1px;
+      }
+
+      &:hover {
+        width: auto !important;
+        transition-delay: 0s !important;
+      }
+    }
+
+    .history-number-field {
+      width: 38px;
+      height: 24px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1a1a1a;
+      background: transparent;
+      border: none;
+      padding: 0 0px;
+      line-height: 1.2;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.05);
+      }
+
+      &:focus {
+        background: rgba(29, 147, 171, 0.08);
+      }
+    }
+  }
+}
+
 .prompt-toast {
   position: absolute;
   bottom: -50px;
@@ -292,8 +395,8 @@
   flex: 1;
   overflow: auto;
   overflow-x: hidden;
-  padding: 20px;
-  padding-bottom: 40px;
+  padding: 25px;
+  padding-bottom: 50px;
   position: relative;
   overscroll-behavior: none;
 }
@@ -555,8 +658,8 @@
 .chat-input-panel {
   position: relative;
   width: 100%;
-  padding: 20px;
-  padding-top: 10px;
+  padding: 12px;
+  padding-top: 8px;
   box-sizing: border-box;
   flex-direction: column;
   border-top: var(--border-in-light);
@@ -564,7 +667,7 @@
 
   .chat-input-actions {
     .chat-input-action {
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
   }
 }
@@ -586,7 +689,7 @@
   background-color: var(--white);
   border: var(--border-in-light);
   border-radius: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   box-shadow: var(--shadow);
 
   .prompt-hint {
@@ -648,11 +751,11 @@
   background-color: var(--white);
   color: var(--black);
   font-family: inherit;
-  padding: 10px 90px 10px 14px;
+  padding: 8px 90px 8px 14px;
   resize: none;
   outline: none;
   box-sizing: border-box;
-  min-height: 68px;
+  min-height: 50px;
 }
 
 .chat-input:focus {
@@ -664,7 +767,7 @@
 
   position: absolute;
   right: 30px;
-  bottom: 32px;
+  bottom: 24px;
 }
 
 @media only screen and (max-width: 600px) {
@@ -673,7 +776,7 @@
   }
 
   .chat-input-send {
-    bottom: 30px;
+    bottom: 22px;
   }
 }
 

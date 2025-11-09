@@ -509,6 +509,7 @@ export function ChatActions(props: {
   const chatStore = useChatStore();
   const pluginStore = usePluginStore();
   const session = chatStore.currentSession();
+  const [tempHistoryCount, setTempHistoryCount] = useState("");
 
   // switch themes
   const theme = config.theme;
@@ -628,6 +629,7 @@ export function ChatActions(props: {
             icon={props.uploading ? <LoadingButtonIcon /> : <ImageIcon />}
           />
         )}
+
         <ChatAction
           onClick={nextTheme}
           text={Locale.Chat.InputActions.Theme[theme]}
@@ -643,6 +645,88 @@ export function ChatActions(props: {
             </>
           }
         />
+
+        {/* 历史消息数控制 - ChatAction样式 */}
+        <div className={`${styles["chat-input-action"]} ${styles["history-input-action"]}`} title={`历史消息数: ${session.mask.modelConfig.historyMessageCount ?? 8}`}>
+          <div className={styles["icon"]}>📝</div>
+          <div className={styles["text"]}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={tempHistoryCount !== "" ? tempHistoryCount : (session.mask.modelConfig.historyMessageCount ?? 8).toString()}
+              onChange={(e) => {
+                const rawValue = e.target.value;
+
+                // 更新临时状态
+                setTempHistoryCount(rawValue);
+
+                // 如果输入为空，暂时不更新，等待用户输入完整
+                if (rawValue === "") {
+                  return;
+                }
+
+                // 如果输入不是数字，不更新
+                if (!/^\d+$/.test(rawValue)) {
+                  return;
+                }
+
+                const value = parseInt(rawValue, 10);
+
+                // 如果解析失败，不更新
+                if (isNaN(value)) {
+                  return;
+                }
+
+                const clampedValue = Math.max(0, Math.min(64, value));
+                chatStore.updateTargetSession(session, (session) => {
+                  session.mask.modelConfig.historyMessageCount = clampedValue;
+                });
+              }}
+              onFocus={(e) => {
+                // 获得焦点时，清空临时状态并全选文本
+                setTempHistoryCount("");
+                e.target.select();
+              }}
+              onClick={(e) => {
+                // 点击时也全选文本，方便直接输入
+                (e.target as HTMLInputElement).select();
+              }}
+              onBlur={(e) => {
+                const rawValue = e.target.value;
+
+                // 当输入框失去焦点时，确保有一个有效值
+                if (rawValue === "" || !/^\d+$/.test(rawValue)) {
+                  // 如果输入无效，恢复为默认值
+                  chatStore.updateTargetSession(session, (session) => {
+                    session.mask.modelConfig.historyMessageCount = 8;
+                  });
+                  setTempHistoryCount("");
+                  return;
+                }
+
+                const value = parseInt(rawValue, 10);
+                if (!isNaN(value)) {
+                  const clampedValue = Math.max(0, Math.min(64, value));
+                  chatStore.updateTargetSession(session, (session) => {
+                    session.mask.modelConfig.historyMessageCount = clampedValue;
+                  });
+                }
+                setTempHistoryCount("");
+              }}
+              onWheel={(e) => {
+                e.preventDefault();
+                const currentValue = tempHistoryCount !== "" ? parseInt(tempHistoryCount) : (session.mask.modelConfig.historyMessageCount ?? 8);
+                const delta = e.deltaY > 0 ? -1 : 1;
+                const newValue = Math.max(0, Math.min(64, currentValue + delta));
+                chatStore.updateTargetSession(session, (session) => {
+                  session.mask.modelConfig.historyMessageCount = newValue;
+                });
+                setTempHistoryCount("");
+              }}
+              className={styles["history-number-field"]}
+            />
+          </div>
+        </div>
 
         <ChatAction
           onClick={props.showPromptHints}
@@ -986,7 +1070,7 @@ export function ShortcutKeyModal(props: { onClose: () => void }) {
   );
 }
 
-function _Chat() {
+function ChatImpl() {
   type RenderMessage = ChatMessage & { preview?: boolean };
 
   const chatStore = useChatStore();
@@ -2167,5 +2251,5 @@ function _Chat() {
 export function Chat() {
   const chatStore = useChatStore();
   const session = chatStore.currentSession();
-  return <_Chat key={session.id}></_Chat>;
+  return <ChatImpl key={session.id}></ChatImpl>;
 }

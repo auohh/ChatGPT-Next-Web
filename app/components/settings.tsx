@@ -90,6 +90,7 @@ import { ProviderType } from "../utils/cloud";
 import { TTSConfigList } from "./tts-config";
 import { RealtimeConfigList } from "./realtime-chat/realtime-config";
 
+
 function EditPromptModal(props: { id: string; onClose: () => void }) {
   const promptStore = usePromptStore();
   const prompt = promptStore.get(props.id);
@@ -1601,6 +1602,29 @@ export function Settings() {
                 </option>
               ))}
             </Select>
+          </ListItem>
+
+          <ListItem title={Locale.Settings.HistoryMessageCount.Title}>
+            <div className={styles["history-message-control"]}>
+              <input
+                type="range"
+                min="2"
+                max="64"
+                value={config.modelConfig.historyMessageCount ?? 8}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 2;
+                  const clampedValue = Math.max(2, Math.min(64, value));
+                  updateConfig((config) => (config.modelConfig.historyMessageCount = clampedValue));
+                }}
+                className={styles["history-slider"]}
+              />
+              <div className={styles["history-value-display"]}>
+                {config.modelConfig.historyMessageCount ?? 8} / 64
+              </div>
+              <div className={styles["history-info"]}>
+                {config.modelConfig.historyMessageCount ?? 8} {Locale.Settings.HistoryMessageCount.SubTitle}
+              </div>
+            </div>
           </ListItem>
 
           <ListItem title={Locale.Settings.Theme}>

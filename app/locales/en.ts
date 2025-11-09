@@ -218,6 +218,10 @@ const en: LocaleType = {
       Title: "Send Preview Bubble",
       SubTitle: "Preview markdown in bubble",
     },
+    HistoryMessageCount: {
+      Title: "History Message Count",
+      SubTitle: "Number of previous messages to include in context",
+    },
     AutoGenerateTitle: {
       Title: "Auto Generate Title",
       SubTitle: "Generate a suitable title based on the conversation content",
