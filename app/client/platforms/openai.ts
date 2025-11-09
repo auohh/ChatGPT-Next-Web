@@ -200,7 +200,8 @@ export class ChatGPTApi implements LLMApi {
       options.config.model.startsWith("o1") ||
       options.config.model.startsWith("o3") ||
       options.config.model.startsWith("o4-mini");
-    const isGpt5 =  options.config.model.startsWith("gpt-5");
+    const isGpt5 = options.config.model?.startsWith("gpt-5");
+    const isGpt5NonChat = isGpt5 && !options.config.model.startsWith("gpt-5-chat");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
@@ -238,13 +239,17 @@ export class ChatGPTApi implements LLMApi {
         // max_tokens: Math.max(modelConfig.max_tokens, 1024),
         // Please do not ask me why not send max_tokens, no reason, this param is just shit, I dont want to explain anymore.
       };
-
+      
       if (isGpt5) {
-  	// Remove max_tokens if present
-  	delete requestPayload.max_tokens;
-  	// Add max_completion_tokens (or max_completion_tokens if that's what you meant)
-  	requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
-
+        const r = requestPayload as any;
+        // see https://platform.openai.com/docs/guides/latest-model?reasoning-effort-mode=chat#gpt-5-parameter-compatibility
+        delete r.temperature;
+        delete r.top_p;
+        delete r.logprobs;
+        delete r.presence_penalty;
+        delete r.max_tokens;
+        r.max_completion_tokens = modelConfig.max_tokens;
+        r.stream = false;
       } else if (isO1OrO3) {
         // by default the o1/o3 models will not attempt to produce output that includes markdown formatting
         // manually add "Formatting re-enabled" developer message to encourage markdown inclusion in model responses
@@ -267,7 +272,8 @@ export class ChatGPTApi implements LLMApi {
 
     console.log("[Request] openai payload: ", requestPayload);
 
-    const shouldStream = !isDalle3 && !!options.config.stream;
+
+    const shouldStream = !!options.config.stream && !isDalle3 && !isGpt5NonChat;
     const controller = new AbortController();
     options.onController?.(controller);
 
