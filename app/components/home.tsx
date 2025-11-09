@@ -185,6 +185,29 @@ function ScreenContent() {
     loadAsyncGoogleFont();
   }, []);
 
+  // 全局快捷键支持
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+P 打开 Prompt (Mac 上也使用 Ctrl+P)
+      if (e.ctrlKey && e.key === "p") {
+        e.preventDefault();
+        // 只有在没有打开 prompt 模态框时才打开
+        if (!showPromptModal) {
+          openPromptModal();
+        }
+      }
+      // ESC 关闭 Prompt 模态框
+      if (e.key === "Escape" && showPromptModal) {
+        closePromptModal();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showPromptModal, openPromptModal, closePromptModal]);
+
   if (isArtifact) {
     return (
       <Routes>

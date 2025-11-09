@@ -76,7 +76,7 @@ export function PromptModal({ onClose }: PromptModalProps) {
     maxHeight: "800px",
   });
   const [showSizeControls, setShowSizeControls] = useState(false);
-  const [showControls, setShowControls] = useState(true);
+  const [showControls, setShowControls] = useState(false);
 
   const getCurrentSize = () => {
     return modalSize === "custom" ? customSize : SIZE_PRESETS[modalSize];
@@ -146,8 +146,8 @@ export function PromptModal({ onClose }: PromptModalProps) {
                 modalSize === "wide"
                   ? "宽屏"
                   : modalSize === "medium"
-                  ? "中"
-                  : "全屏"
+                    ? "中"
+                    : "全屏"
               })`}
             />
             <IconButton
@@ -210,8 +210,8 @@ export function PromptModal({ onClose }: PromptModalProps) {
                       {size === "medium"
                         ? "中"
                         : size === "wide"
-                        ? "宽屏"
-                        : "全屏"}
+                          ? "宽屏"
+                          : "全屏"}
                     </button>
                   ),
                 )}
