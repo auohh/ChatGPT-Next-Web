@@ -201,7 +201,7 @@ export class ChatGPTApi implements LLMApi {
       options.config.model.startsWith("o3") ||
       options.config.model.startsWith("o4-mini");
     const isGpt5 = options.config.model?.startsWith("gpt-5");
-    const isGpt5NonChat = isGpt5 && !options.config.model.startsWith("gpt-5-chat");
+    const isGpt5NonChat = isGpt5 && !options.config.model.startsWith("gpt-5-chat") && !options.config.model.startsWith("gpt-5.1");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
@@ -249,7 +249,7 @@ export class ChatGPTApi implements LLMApi {
         delete r.presence_penalty;
         delete r.max_tokens;
         r.max_completion_tokens = modelConfig.max_tokens;
-        r.stream = false;
+        r.stream = true;
       } else if (isO1OrO3) {
         // by default the o1/o3 models will not attempt to produce output that includes markdown formatting
         // manually add "Formatting re-enabled" developer message to encourage markdown inclusion in model responses
@@ -273,7 +273,7 @@ export class ChatGPTApi implements LLMApi {
     console.log("[Request] openai payload: ", requestPayload);
 
 
-    const shouldStream = !!options.config.stream && !isDalle3 && !isGpt5NonChat;
+    const shouldStream = !!options.config.stream && !isDalle3;
     const controller = new AbortController();
     options.onController?.(controller);
 
