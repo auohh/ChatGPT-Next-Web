@@ -63,6 +63,8 @@ export const DEFAULT_CONFIG = {
   customModels: "",
   models: DEFAULT_MODELS as any as LLMModel[],
 
+  quickSwitchModels: [] as string[], // quick switch model list
+
   modelConfig: {
     model: "gpt-4o-mini" as ModelType,
     providerName: "OpenAI" as ServiceProvider,
@@ -104,6 +106,48 @@ export const DEFAULT_CONFIG = {
     temperature: 0.9,
     voice: "alloy" as Voice,
   },
+
+  // 新增：聊天界面选项显示控制
+  chatActionVisibility: {
+    showStop: true, // 停止响应
+    showToBottom: true, // 滚动到底部
+    showSettings: true, // 对话设置
+    showHistoryCount: false, // 历史消息数控制
+    showPromptLibrary: false, // 提示词库
+    showMasks: false, // 遮具
+    showClearContext: false, // 清除上下文
+    showQuickSwitch: false, // 快捷切换模型
+    showModelSelector: true, // 模型选择
+    showSizeSelector: true, // 图片尺寸选择器
+    showQualitySelector: true, // 图片质量选择器
+    showStyleSelector: true, // 图片风格选择器
+    showImageUpload: true, // 图片上传
+    showThemeSwitch: true, // 主题切换
+    showPluginSelector: true, // 插件选择
+    showShortcutKey: true, // 快捷键
+    showMcpTools: true, // MCP工具
+  },
+
+  // 新增：聊天界面按钮排序配置
+  chatActionOrder: [
+    "stop", // 停止响应
+    "toBottom", // 滚动到底部
+    "settings", // 设置
+    "imageUpload", // 图片上传
+    "themeSwitch", // 主题切换
+    "historyCount", // 历史消息数
+    "promptLibrary", // 提示词库
+    "masks", // 面具
+    "clearContext", // 清除上下文
+    "quickSwitch", // 快捷切换
+    "modelSelector", // 模型选择器
+    "sizeSelector", // 图片尺寸选择器
+    "qualitySelector", // 图片质量选择器
+    "styleSelector", // 图片风格选择器
+    "pluginSelector", // 插件选择器
+    "shortcutKey", // 快捷键
+    "mcpTools", // MCP工具
+  ],
 };
 
 export type ChatConfig = typeof DEFAULT_CONFIG;
@@ -195,7 +239,7 @@ export const useAppConfig = createPersistStore(
   }),
   {
     name: StoreKey.Config,
-    version: 4.1,
+    version: 4.2,
 
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
@@ -253,6 +297,26 @@ export const useAppConfig = createPersistStore(
           DEFAULT_CONFIG.modelConfig.compressModel;
         state.modelConfig.compressProviderName =
           DEFAULT_CONFIG.modelConfig.compressProviderName;
+      }
+
+      if (version < 4.2) {
+        // 添加聊天界面选项显示控制配置
+        if (!state.chatActionVisibility) {
+          state.chatActionVisibility = { ...DEFAULT_CONFIG.chatActionVisibility };
+        } else {
+          // 确保所有必需的字段都存在
+          const defaultVisibility = DEFAULT_CONFIG.chatActionVisibility;
+          Object.keys(defaultVisibility).forEach(key => {
+            if (state.chatActionVisibility[key] === undefined) {
+              state.chatActionVisibility[key] = defaultVisibility[key];
+            }
+          });
+        }
+
+        // 添加聊天界面按钮排序配置
+        if (!state.chatActionOrder || state.chatActionOrder.length === 0) {
+          state.chatActionOrder = [...DEFAULT_CONFIG.chatActionOrder];
+        }
       }
 
       return state as any;

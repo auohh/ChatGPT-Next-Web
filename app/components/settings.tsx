@@ -32,6 +32,7 @@ import {
   showToast,
 } from "./ui-lib";
 import { ModelConfigList } from "./model-config";
+import { QuickModelModal } from "./quick-model-modal";
 
 import { IconButton } from "./button";
 import {
@@ -89,6 +90,7 @@ import { useMaskStore } from "../store/mask";
 import { ProviderType } from "../utils/cloud";
 import { TTSConfigList } from "./tts-config";
 import { RealtimeConfigList } from "./realtime-chat/realtime-config";
+import { ChatActionOrderModal } from "./chat-action-order-modal";
 
 
 function EditPromptModal(props: { id: string; onClose: () => void }) {
@@ -585,6 +587,8 @@ function SyncItems() {
 export function Settings() {
   const navigate = useNavigate();
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showQuickModelModal, setShowQuickModelModal] = useState(false);
+  const [showChatActionOrderModal, setShowChatActionOrderModal] = useState(false);
   const config = useAppConfig();
   const updateConfig = config.update;
 
@@ -1824,6 +1828,17 @@ export function Settings() {
           </ListItem>
 
           <ListItem
+            title={Locale.Settings.ChatActionManagement.Title}
+            subTitle={Locale.Settings.ChatActionManagement.SubTitle}
+          >
+            <IconButton
+              text={Locale.Settings.ChatActionManagement.ManageActions}
+              onClick={() => setShowChatActionOrderModal(true)}
+              bordered
+            />
+          </ListItem>
+
+          <ListItem
             title={Locale.Settings.Prompt.List}
             subTitle={Locale.Settings.Prompt.ListCount(
               builtinCount,
@@ -1950,9 +1965,62 @@ export function Settings() {
           />
         </List>
 
+        <List>
+          <ListItem
+            title={Locale.Settings.QuickSwitchModels.Title}
+            subTitle={Locale.Settings.QuickSwitchModels.SubTitle}
+          >
+            <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: "14px", color: "#666", fontWeight: "500" }}>
+                {config.quickSwitchModels && config.quickSwitchModels.length > 0
+                  ? `已选择 ${config.quickSwitchModels.length} 个模型`
+                  : "未配置快捷模型"
+                }
+              </div>
+              <button
+                style={{
+                  padding: "6px 12px",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "6px",
+                  background: "var(--white)",
+                  color: "var(--primary)",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+                onClick={() => setShowQuickModelModal(true)}
+                onMouseOver={(e) => {
+                  e.target.style.background = "var(--hover-color)";
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.background = "var(--white)";
+                }}
+              >
+                配置模型
+              </button>
+            </div>
+          </ListItem>
+        </List>
+
+        <QuickModelModal
+          visible={showQuickModelModal}
+          onClose={() => setShowQuickModelModal(false)}
+          selectedModels={config.quickSwitchModels || []}
+          onChange={(models) => {
+            config.update((config) => {
+              config.quickSwitchModels = models;
+            });
+          }}
+        />
+
         {shouldShowPromptModal && (
           <UserPromptModal onClose={() => setShowPromptModal(false)} />
         )}
+
+        {showChatActionOrderModal && (
+          <ChatActionOrderModal onClose={() => setShowChatActionOrderModal(false)} />
+        )}
+
         <List>
           <RealtimeConfigList
             realtimeConfig={config.realtimeConfig}

@@ -88,6 +88,8 @@ import Locale from "../locales";
 
 import { IconButton } from "./button";
 import styles from "./chat.module.scss";
+import { Tooltip } from "./tooltip";
+import { SimpleTooltip } from "./simple-tooltip";
 
 import {
   List,
@@ -405,6 +407,7 @@ export function ChatAction(props: {
   text: string;
   icon: JSX.Element;
   onClick: () => void;
+  title?: string;
 }) {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -427,6 +430,7 @@ export function ChatAction(props: {
   return (
     <div
       className={clsx(styles["chat-input-action"], "clickable")}
+      title={props.title}
       onClick={() => {
         props.onClick();
         setTimeout(updateWidth, 1);
@@ -568,6 +572,192 @@ export function ChatActions(props: {
   const currentQuality = session.mask.modelConfig?.quality ?? "standard";
   const currentStyle = session.mask.modelConfig?.style ?? "vivid";
 
+  // Quick model switch functionality
+  const quickSwitchModels = config.quickSwitchModels || [];
+  const currentModelWithProvider = `${currentModel}@${currentProviderName}`;
+
+  // Get current position and next model info for display
+  const quickSwitchInfo = useMemo(() => {
+    if (quickSwitchModels.length === 0) return null;
+
+    const currentIndex = quickSwitchModels.findIndex(
+      (modelStr) => modelStr === currentModelWithProvider
+    );
+
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % quickSwitchModels.length;
+    const nextModelStr = quickSwitchModels[nextIndex];
+    const [nextModel, nextProviderName] = getModelProvider(nextModelStr);
+
+    const nextModelData = models.find(
+      (m) => m.name === nextModel && m?.provider?.providerName === nextProviderName
+    );
+
+    return {
+      currentIndex: currentIndex === -1 ? null : currentIndex,
+      totalCount: quickSwitchModels.length,
+      nextModelName: nextModelData?.displayName || nextModel,
+      nextProviderName
+    };
+  }, [quickSwitchModels, currentModelWithProvider, models]);
+
+  const quickSwitchModel = useCallback(() => {
+    if (quickSwitchModels.length === 0) {
+      showToast("请在设置中配置快捷切换模型");
+      return;
+    }
+
+    const currentIndex = quickSwitchModels.findIndex(
+      (modelStr) => modelStr === currentModelWithProvider
+    );
+
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % quickSwitchModels.length;
+    const nextModelStr = quickSwitchModels[nextIndex];
+    const [nextModel, nextProviderName] = getModelProvider(nextModelStr);
+
+    const nextModelData = models.find(
+      (m) => m.name === nextModel && m?.provider?.providerName === nextProviderName
+    );
+
+    if (nextModelData) {
+      chatStore.updateTargetSession(session, (session) => {
+        session.mask.modelConfig.model = nextModel as ModelType;
+        session.mask.modelConfig.providerName = nextProviderName as ServiceProvider;
+        session.mask.syncGlobalConfig = false;
+      });
+
+      showToast(
+        nextProviderName == "ByteDance"
+          ? nextModelData.displayName
+          : nextModel
+      );
+    } else {
+      showToast(`模型 ${nextModelStr} 不可用`);
+    }
+  }, [quickSwitchModels, currentModelWithProvider, models, chatStore, session]);
+
+  // Generate display text for quick switch button
+  const getQuickSwitchText = () => {
+    return "快捷切换";
+  };
+
+  // Get next model name for display
+  const getNextModelDisplay = () => {
+    if (!quickSwitchInfo) return "";
+    return quickSwitchInfo.nextModelName;
+  };
+
+  // Generate tooltip content for quick switch button
+  const getQuickSwitchTooltip = () => {
+    if (quickSwitchModels.length === 0) {
+      return (
+        <div style={{
+          textAlign: "center",
+          color: "#333",
+          fontSize: "14px"
+        }}>
+          请在设置中配置快捷切换模型
+        </div>
+      );
+    }
+
+    const currentIndex = quickSwitchModels.findIndex(
+      (modelStr) => modelStr === currentModelWithProvider
+    );
+
+    const modelItems = quickSwitchModels.map((modelStr, index) => {
+      const [model, providerName] = getModelProvider(modelStr);
+      const modelData = models.find(
+        (m) => m.name === model && m?.provider?.providerName === providerName
+      );
+      const displayName = modelData?.displayName || model;
+
+      const isCurrent = index === currentIndex;
+
+      const itemStyle = {
+        display: "flex",
+        alignItems: "center",
+        padding: "10px 16px",
+        margin: "6px 0",
+        borderRadius: "10px",
+        background: isCurrent
+          ? "rgba(255, 152, 0, 0.15)"
+          : "rgba(0, 0, 0, 0.03)",
+        border: isCurrent
+          ? "1px solid rgba(255, 152, 0, 0.3)"
+          : "1px solid rgba(0, 0, 0, 0.1)",
+        transition: "all 0.2s ease"
+      };
+
+      const iconStyle = {
+        width: "8px",
+        height: "8px",
+        borderRadius: "50%",
+        marginRight: "12px",
+        background: isCurrent
+          ? "#FF9800"
+          : "rgba(0, 0, 0, 0.3)"
+      };
+
+      const nameStyle = {
+        fontSize: "14px",
+        fontWeight: "500",
+        color: "#333",
+        flex: 1
+      };
+
+      const providerStyle = {
+        fontSize: "12px",
+        color: "#666",
+        background: "rgba(0, 0, 0, 0.06)",
+        padding: "3px 8px",
+        borderRadius: "6px",
+        marginLeft: "10px"
+      };
+
+      return (
+        <div key={index} style={itemStyle}>
+          <div style={iconStyle} />
+          <div style={nameStyle}>{displayName}</div>
+          {providerName && providerName !== "OpenAI" && (
+            <div style={providerStyle}>{providerName}</div>
+          )}
+        </div>
+      );
+    });
+
+    const headerStyle = {
+      fontSize: "14px",
+      fontWeight: "600",
+      color: "#333",
+      marginBottom: "16px",
+      textAlign: "center" as const
+    };
+
+    const footerStyle = {
+      marginTop: "16px",
+      paddingTop: "12px",
+      borderTop: "1px solid rgba(0, 0, 0, 0.1)",
+      fontSize: "12px",
+      color: "#666",
+      textAlign: "center" as const
+    };
+
+    return (
+      <div>
+        <div style={headerStyle}>快捷切换模型</div>
+        <div>
+          {modelItems}
+        </div>
+        <div style={footerStyle}>
+          {currentIndex !== -1
+            ? `当前：第 ${currentIndex + 1} / ${quickSwitchModels.length} 个模型`
+            : `未在快捷列表中`
+          }
+        </div>
+      </div>
+    );
+  };
+
   const isMobileScreen = useMobileScreen();
 
   useEffect(() => {
@@ -597,40 +787,48 @@ export function ChatActions(props: {
     }
   }, [chatStore, currentModel, models, session]);
 
-  return (
-    <div className={styles["chat-input-actions"]}>
-      <>
-        {couldStop && (
-          <ChatAction
-            onClick={stopAll}
-            text={Locale.Chat.InputActions.Stop}
-            icon={<StopIcon />}
-          />
-        )}
-        {!props.hitBottom && (
-          <ChatAction
-            onClick={props.scrollToBottom}
-            text={Locale.Chat.InputActions.ToBottom}
-            icon={<BottomIcon />}
-          />
-        )}
-        {props.hitBottom && (
-          <ChatAction
-            onClick={props.showPromptModal}
-            text={Locale.Chat.InputActions.Settings}
-            icon={<SettingsIcon />}
-          />
-        )}
-
-        {showUploadImage && (
-          <ChatAction
-            onClick={props.uploadImage}
-            text={Locale.Chat.InputActions.UploadImage}
-            icon={props.uploading ? <LoadingButtonIcon /> : <ImageIcon />}
-          />
-        )}
-
+  // 定义所有可用的按钮
+  const allChatActions = useMemo(() => {
+    return {
+      stop: couldStop && config.chatActionVisibility.showStop ? (
         <ChatAction
+          key="stop"
+          onClick={stopAll}
+          text={Locale.Chat.InputActions.Stop}
+          icon={<StopIcon />}
+        />
+      ) : null,
+
+      toBottom: !props.hitBottom && config.chatActionVisibility.showToBottom ? (
+        <ChatAction
+          key="toBottom"
+          onClick={props.scrollToBottom}
+          text={Locale.Chat.InputActions.ToBottom}
+          icon={<BottomIcon />}
+        />
+      ) : null,
+
+      settings: props.hitBottom && config.chatActionVisibility.showSettings ? (
+        <ChatAction
+          key="settings"
+          onClick={props.showPromptModal}
+          text={Locale.Chat.InputActions.Settings}
+          icon={<SettingsIcon />}
+        />
+      ) : null,
+
+      imageUpload: config.chatActionVisibility.showImageUpload && showUploadImage ? (
+        <ChatAction
+          key="imageUpload"
+          onClick={props.uploadImage}
+          text={Locale.Chat.InputActions.UploadImage}
+          icon={props.uploading ? <LoadingButtonIcon /> : <ImageIcon />}
+        />
+      ) : null,
+
+      themeSwitch: config.chatActionVisibility.showThemeSwitch ? (
+        <ChatAction
+          key="themeSwitch"
           onClick={nextTheme}
           text={Locale.Chat.InputActions.Theme[theme]}
           icon={
@@ -645,9 +843,10 @@ export function ChatActions(props: {
             </>
           }
         />
+      ) : null,
 
-        {/* 历史消息数控制 - ChatAction样式 */}
-        <div className={`${styles["chat-input-action"]} ${styles["history-input-action"]}`} title={`历史消息数: ${session.mask.modelConfig.historyMessageCount ?? 8}`}>
+      historyCount: config.chatActionVisibility.showHistoryCount ? (
+        <div key="historyCount" className={`${styles["chat-input-action"]} ${styles["history-input-action"]}`} title={`历史消息数: ${session.mask.modelConfig.historyMessageCount ?? 8}`}>
           <div className={styles["icon"]}>📝</div>
           <div className={styles["text"]}>
             <input
@@ -656,54 +855,31 @@ export function ChatActions(props: {
               value={tempHistoryCount !== "" ? tempHistoryCount : (session.mask.modelConfig.historyMessageCount ?? 8).toString()}
               onChange={(e) => {
                 const rawValue = e.target.value;
-
-                // 更新临时状态
                 setTempHistoryCount(rawValue);
-
-                // 如果输入为空，暂时不更新，等待用户输入完整
-                if (rawValue === "") {
-                  return;
-                }
-
-                // 如果输入不是数字，不更新
-                if (!/^\d+$/.test(rawValue)) {
-                  return;
-                }
-
+                if (rawValue === "" || !/^\d+$/.test(rawValue)) return;
                 const value = parseInt(rawValue, 10);
-
-                // 如果解析失败，不更新
-                if (isNaN(value)) {
-                  return;
-                }
-
+                if (isNaN(value)) return;
                 const clampedValue = Math.max(0, Math.min(64, value));
                 chatStore.updateTargetSession(session, (session) => {
                   session.mask.modelConfig.historyMessageCount = clampedValue;
                 });
               }}
               onFocus={(e) => {
-                // 获得焦点时，清空临时状态并全选文本
                 setTempHistoryCount("");
                 e.target.select();
               }}
               onClick={(e) => {
-                // 点击时也全选文本，方便直接输入
                 (e.target as HTMLInputElement).select();
               }}
               onBlur={(e) => {
                 const rawValue = e.target.value;
-
-                // 当输入框失去焦点时，确保有一个有效值
                 if (rawValue === "" || !/^\d+$/.test(rawValue)) {
-                  // 如果输入无效，恢复为默认值
                   chatStore.updateTargetSession(session, (session) => {
                     session.mask.modelConfig.historyMessageCount = 8;
                   });
                   setTempHistoryCount("");
                   return;
                 }
-
                 const value = parseInt(rawValue, 10);
                 if (!isNaN(value)) {
                   const clampedValue = Math.max(0, Math.min(64, value));
@@ -727,22 +903,29 @@ export function ChatActions(props: {
             />
           </div>
         </div>
+      ) : null,
 
+      promptLibrary: config.chatActionVisibility.showPromptLibrary ? (
         <ChatAction
+          key="promptLibrary"
           onClick={props.showPromptHints}
           text={Locale.Chat.InputActions.Prompt}
           icon={<PromptIcon />}
         />
+      ) : null,
 
+      masks: config.chatActionVisibility.showMasks ? (
         <ChatAction
-          onClick={() => {
-            navigate(Path.Masks);
-          }}
+          key="masks"
+          onClick={() => navigate(Path.Masks)}
           text={Locale.Chat.InputActions.Masks}
           icon={<MaskIcon />}
         />
+      ) : null,
 
+      clearContext: config.chatActionVisibility.showClearContext ? (
         <ChatAction
+          key="clearContext"
           text={Locale.Chat.InputActions.Clear}
           icon={<BreakIcon />}
           onClick={() => {
@@ -751,183 +934,232 @@ export function ChatActions(props: {
                 session.clearContextIndex = undefined;
               } else {
                 session.clearContextIndex = session.messages.length;
-                session.memoryPrompt = ""; // will clear memory
+                session.memoryPrompt = "";
               }
             });
           }}
         />
+      ) : null,
 
+      quickSwitch: config.chatActionVisibility.showQuickSwitch && quickSwitchModels.length > 0 ? (
+        <SimpleTooltip key="quickSwitch" content={getQuickSwitchTooltip()} placement="top">
+          <ChatAction
+            onClick={quickSwitchModel}
+            text={getQuickSwitchText()}
+            icon={<ReloadIcon />}
+          />
+        </SimpleTooltip>
+      ) : null,
+
+      modelSelector: config.chatActionVisibility.showModelSelector ? (
         <ChatAction
+          key="modelSelector"
           onClick={() => setShowModelSelector(true)}
           text={currentModelName}
           icon={<RobotIcon />}
         />
+      ) : null,
 
-        {showModelSelector && (
-          <Selector
-            defaultSelectedValue={`${currentModel}@${currentProviderName}`}
-            items={models.map((m) => ({
-              title: `${m.displayName}${
-                m?.provider?.providerName
-                  ? " (" + m?.provider?.providerName + ")"
-                  : ""
-              }`,
-              value: `${m.name}@${m?.provider?.providerName}`,
-            }))}
-            onClose={() => setShowModelSelector(false)}
-            onSelection={(s) => {
-              if (s.length === 0) return;
-              const [model, providerName] = getModelProvider(s[0]);
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.model = model as ModelType;
-                session.mask.modelConfig.providerName =
-                  providerName as ServiceProvider;
-                session.mask.syncGlobalConfig = false;
-              });
-              if (providerName == "ByteDance") {
-                const selectedModel = models.find(
-                  (m) =>
-                    m.name == model &&
-                    m?.provider?.providerName == providerName,
-                );
-                showToast(selectedModel?.displayName ?? "");
-              } else {
-                showToast(model);
-              }
-            }}
-          />
-        )}
+      sizeSelector: config.chatActionVisibility.showSizeSelector && supportsCustomSize(currentModel) ? (
+        <ChatAction
+          key="sizeSelector"
+          onClick={() => setShowSizeSelector(true)}
+          text={currentSize}
+          icon={<SizeIcon />}
+        />
+      ) : null,
 
-        {supportsCustomSize(currentModel) && (
-          <ChatAction
-            onClick={() => setShowSizeSelector(true)}
-            text={currentSize}
-            icon={<SizeIcon />}
-          />
-        )}
+      qualitySelector: config.chatActionVisibility.showQualitySelector && isDalle3(currentModel) ? (
+        <ChatAction
+          key="qualitySelector"
+          onClick={() => setShowQualitySelector(true)}
+          text={currentQuality}
+          icon={<QualityIcon />}
+        />
+      ) : null,
 
-        {showSizeSelector && (
-          <Selector
-            defaultSelectedValue={currentSize}
-            items={modelSizes.map((m) => ({
-              title: m,
-              value: m,
-            }))}
-            onClose={() => setShowSizeSelector(false)}
-            onSelection={(s) => {
-              if (s.length === 0) return;
-              const size = s[0];
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.size = size;
-              });
-              showToast(size);
-            }}
-          />
-        )}
+      styleSelector: config.chatActionVisibility.showStyleSelector && isDalle3(currentModel) ? (
+        <ChatAction
+          key="styleSelector"
+          onClick={() => setShowStyleSelector(true)}
+          text={currentStyle}
+          icon={<StyleIcon />}
+        />
+      ) : null,
 
-        {isDalle3(currentModel) && (
-          <ChatAction
-            onClick={() => setShowQualitySelector(true)}
-            text={currentQuality}
-            icon={<QualityIcon />}
-          />
-        )}
+      pluginSelector: config.chatActionVisibility.showPluginSelector && showPlugins(currentProviderName, currentModel) ? (
+        <ChatAction
+          key="pluginSelector"
+          onClick={() => {
+            if (pluginStore.getAll().length == 0) {
+              navigate(Path.Plugins);
+            } else {
+              setShowPluginSelector(true);
+            }
+          }}
+          text={Locale.Plugin.Name}
+          icon={<PluginIcon />}
+        />
+      ) : null,
 
-        {showQualitySelector && (
-          <Selector
-            defaultSelectedValue={currentQuality}
-            items={dalle3Qualitys.map((m) => ({
-              title: m,
-              value: m,
-            }))}
-            onClose={() => setShowQualitySelector(false)}
-            onSelection={(q) => {
-              if (q.length === 0) return;
-              const quality = q[0];
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.quality = quality;
-              });
-              showToast(quality);
-            }}
-          />
-        )}
+      shortcutKey: !isMobileScreen && config.chatActionVisibility.showShortcutKey ? (
+        <ChatAction
+          key="shortcutKey"
+          onClick={() => props.setShowShortcutKeyModal(true)}
+          text={Locale.Chat.ShortcutKey.Title}
+          icon={<ShortcutkeyIcon />}
+        />
+      ) : null,
 
-        {isDalle3(currentModel) && (
-          <ChatAction
-            onClick={() => setShowStyleSelector(true)}
-            text={currentStyle}
-            icon={<StyleIcon />}
-          />
-        )}
+      mcpTools: !isMobileScreen && config.chatActionVisibility.showMcpTools ? (
+        <MCPAction key="mcpTools" />
+      ) : null,
+    };
+  }, [
+    couldStop, props.hitBottom, config.chatActionVisibility, showUploadImage,
+    theme, session.mask.modelConfig.historyMessageCount, tempHistoryCount,
+    currentModel, currentModelName, currentSize, currentQuality, currentStyle,
+    quickSwitchModels.length, models, isMobileScreen, currentProviderName
+  ]);
 
-        {showStyleSelector && (
-          <Selector
-            defaultSelectedValue={currentStyle}
-            items={dalle3Styles.map((m) => ({
-              title: m,
-              value: m,
-            }))}
-            onClose={() => setShowStyleSelector(false)}
-            onSelection={(s) => {
-              if (s.length === 0) return;
-              const style = s[0];
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.style = style;
-              });
-              showToast(style);
-            }}
-          />
-        )}
+  // 根据排序配置渲染按钮
+  const renderOrderedActions = () => {
+    return config.chatActionOrder
+      .map(actionKey => allChatActions[actionKey])
+      .filter(Boolean);
+  };
 
-        {showPlugins(currentProviderName, currentModel) && (
-          <ChatAction
-            onClick={() => {
-              if (pluginStore.getAll().length == 0) {
-                navigate(Path.Plugins);
-              } else {
-                setShowPluginSelector(true);
-              }
-            }}
-            text={Locale.Plugin.Name}
-            icon={<PluginIcon />}
-          />
-        )}
-        {showPluginSelector && (
-          <Selector
-            multiple
-            defaultSelectedValue={chatStore.currentSession().mask?.plugin}
-            items={pluginStore.getAll().map((item) => ({
-              title: `${item?.title}@${item?.version}`,
-              value: item?.id,
-            }))}
-            onClose={() => setShowPluginSelector(false)}
-            onSelection={(s) => {
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.plugin = s as string[];
-              });
-            }}
-          />
-        )}
-
-        {!isMobileScreen && (
-          <ChatAction
-            onClick={() => props.setShowShortcutKeyModal(true)}
-            text={Locale.Chat.ShortcutKey.Title}
-            icon={<ShortcutkeyIcon />}
-          />
-        )}
-        {!isMobileScreen && <MCPAction />}
-      </>
-      <div className={styles["chat-input-actions-end"]}>
-        {config.realtimeConfig.enable && (
-          <ChatAction
-            onClick={() => props.setShowChatSidePanel(true)}
-            text={"Realtime Chat"}
-            icon={<HeadphoneIcon />}
-          />
-        )}
+  return (
+    <>
+      <div className={styles["chat-input-actions"]}>
+        <>
+          {renderOrderedActions()}
+        </>
+        <div className={styles["chat-input-actions-end"]}>
+          {config.realtimeConfig.enable && (
+            <ChatAction
+              onClick={() => props.setShowChatSidePanel(true)}
+              text={"Realtime Chat"}
+              icon={<HeadphoneIcon />}
+            />
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* 模型选择器弹窗 */}
+      {showModelSelector && (
+        <Selector
+          defaultSelectedValue={`${currentModel}@${currentProviderName}`}
+          items={models.map((m) => ({
+            title: `${m.displayName}${
+              m?.provider?.providerName
+                ? " (" + m?.provider?.providerName + ")"
+                : ""
+            }`,
+            value: `${m.name}@${m?.provider?.providerName}`,
+          }))}
+          onClose={() => setShowModelSelector(false)}
+          onSelection={(s) => {
+            if (s.length === 0) return;
+            const [model, providerName] = getModelProvider(s[0]);
+            chatStore.updateTargetSession(session, (session) => {
+              session.mask.modelConfig.model = model as ModelType;
+              session.mask.modelConfig.providerName =
+                providerName as ServiceProvider;
+              session.mask.syncGlobalConfig = false;
+            });
+            if (providerName == "ByteDance") {
+              const selectedModel = models.find(
+                (m) =>
+                  m.name == model &&
+                  m?.provider?.providerName == providerName,
+              );
+              showToast(selectedModel?.displayName ?? "");
+            } else {
+              showToast(model);
+            }
+          }}
+        />
+      )}
+
+      {/* 图片尺寸选择器弹窗 */}
+      {showSizeSelector && (
+        <Selector
+          defaultSelectedValue={currentSize}
+          items={modelSizes.map((m) => ({
+            title: m,
+            value: m,
+          }))}
+          onClose={() => setShowSizeSelector(false)}
+          onSelection={(s) => {
+            if (s.length === 0) return;
+            const size = s[0];
+            chatStore.updateTargetSession(session, (session) => {
+              session.mask.modelConfig.size = size;
+            });
+            showToast(size);
+          }}
+        />
+      )}
+
+      {/* 图片质量选择器弹窗 */}
+      {showQualitySelector && (
+        <Selector
+          defaultSelectedValue={currentQuality}
+          items={dalle3Qualitys.map((m) => ({
+            title: m,
+            value: m,
+          }))}
+          onClose={() => setShowQualitySelector(false)}
+          onSelection={(q) => {
+            if (q.length === 0) return;
+            const quality = q[0];
+            chatStore.updateTargetSession(session, (session) => {
+              session.mask.modelConfig.quality = quality;
+            });
+            showToast(quality);
+          }}
+        />
+      )}
+
+      {/* 图片风格选择器弹窗 */}
+      {showStyleSelector && (
+        <Selector
+          defaultSelectedValue={currentStyle}
+          items={dalle3Styles.map((m) => ({
+            title: m,
+            value: m,
+          }))}
+          onClose={() => setShowStyleSelector(false)}
+          onSelection={(s) => {
+            if (s.length === 0) return;
+            const style = s[0];
+            chatStore.updateTargetSession(session, (session) => {
+              session.mask.modelConfig.style = style;
+            });
+            showToast(style);
+          }}
+        />
+      )}
+
+      {/* 插件选择器弹窗 */}
+      {showPluginSelector && (
+        <Selector
+          multiple
+          defaultSelectedValue={chatStore.currentSession().mask?.plugin}
+          items={pluginStore.getAll().map((item) => ({
+            title: `${item?.title}@${item?.version}`,
+            value: item?.id,
+          }))}
+          onClose={() => setShowPluginSelector(false)}
+          onSelection={(s) => {
+            chatStore.updateTargetSession(session, (session) => {
+              session.mask.plugin = s as string[];
+            });
+          }}
+        />
+      )}
+    </>
   );
 }
 

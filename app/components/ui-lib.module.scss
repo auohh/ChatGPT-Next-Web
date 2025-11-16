@@ -168,6 +168,20 @@
   }
 }
 
+.modal-container-max {
+  width: 95vw;
+  height: 95vh;
+  max-width: unset;
+  display: flex;
+  flex-direction: column;
+
+  .modal-content {
+    max-height: unset !important;
+    flex-grow: 1;
+    overflow: auto;
+  }
+}
+
 @media screen and (max-width: 600px) {
   .modal-container {
     width: 100vw;
@@ -186,9 +200,22 @@
   transform: translateY(0);
   position: fixed;
   left: 0;
-  bottom: 0;
+  bottom: 10vh; /* Moved up from bottom: 0 to avoid toolbar overlap */
   animation: slide-in ease 0.6s;
   z-index: 99999;
+}
+
+/* Responsive adjustment for mobile devices */
+@media screen and (max-width: 768px) {
+  .show {
+    bottom: 15vh; /* Higher position on mobile to avoid toolbar */
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .show {
+    bottom: 20vh; /* Even higher on very small screens */
+  }
 }
 
 .hide {
@@ -306,9 +333,10 @@
   width: 100vw;
   background-color: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 999;
+  padding-top: 25vh; /* Increased top padding to avoid toolbar overlap */
 
   .selector-item-disabled {
     opacity: 0.6;
@@ -316,8 +344,9 @@
 
   &-content {
     min-width: 300px;
+    max-width: 90vw;
     .list {
-      max-height: 90vh;
+      max-height: 50vh; /* Further reduced max height to ensure it doesn't overlap toolbar */
       overflow-x: hidden;
       overflow-y: auto;
 
@@ -332,6 +361,38 @@
         &:active {
           filter: brightness(0.9);
         }
+      }
+    }
+  }
+}
+
+/* Responsive adjustment for mobile screens */
+@media screen and (max-width: 768px) {
+  .selector {
+    padding-top: 30vh; /* More padding on mobile to avoid toolbar */
+
+    &-content {
+      min-width: 280px;
+      max-width: 95vw;
+
+      .list {
+        max-height: 40vh; /* Even smaller on mobile */
+      }
+    }
+  }
+}
+
+/* Additional breakpoint for very small screens */
+@media screen and (max-width: 480px) {
+  .selector {
+    padding-top: 35vh; /* Even more padding for very small screens */
+
+    &-content {
+      min-width: 260px;
+      max-width: 98vw;
+
+      .list {
+        max-height: 35vh; /* Very small on mobile */
       }
     }
   }
