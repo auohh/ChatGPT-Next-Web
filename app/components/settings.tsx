@@ -1989,11 +1989,11 @@ export function Settings() {
                   transition: "all 0.2s"
                 }}
                 onClick={() => setShowQuickModelModal(true)}
-                onMouseOver={(e) => {
-                  e.target.style.background = "var(--hover-color)";
+                onMouseOver={(e: React.MouseEvent) => {
+                  (e.target as HTMLElement).style.background = "var(--hover-color)";
                 }}
-                onMouseOut={(e) => {
-                  e.target.style.background = "var(--white)";
+                onMouseOut={(e: React.MouseEvent) => {
+                  (e.target as HTMLElement).style.background = "var(--white)";
                 }}
               >
                 配置模型

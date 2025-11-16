@@ -1044,7 +1044,7 @@ export function ChatActions(props: {
   // 根据排序配置渲染按钮
   const renderOrderedActions = () => {
     return config.chatActionOrder
-      .map(actionKey => allChatActions[actionKey])
+      .map(actionKey => actionKey in allChatActions ? allChatActions[actionKey as keyof typeof allChatActions] : null)
       .filter(Boolean);
   };
 

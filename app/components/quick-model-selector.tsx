@@ -123,14 +123,14 @@ export function QuickModelSelector({ selectedModels, onChange }: Props) {
                   <CustomCheckbox
                     checked={isFullySelected}
                     indeterminate={isPartiallySelected}
-                    onChange={(checked) => {
+                    onChange={(checked: boolean) => {
                       if (checked) {
                         selectAllInProvider(providerName);
                       } else {
                         deselectAllInProvider(providerName);
                       }
                     }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
                   />
                   <span className={styles["provider-name"]}>{providerName}</span>
                   <span className={styles["model-count"]}>({models.length})</span>
@@ -150,7 +150,7 @@ export function QuickModelSelector({ selectedModels, onChange }: Props) {
                       <div key={index} className={styles["model-item"]}>
                         <CustomCheckbox
                           checked={isSelected}
-                          onChange={(checked) => toggleModel(modelValue, checked)}
+                          onChange={(checked: boolean) => toggleModel(modelValue, checked)}
                         />
                         <div className={styles["model-info"]}>
                           <div className={styles["model-name"]}>{model.displayName}</div>

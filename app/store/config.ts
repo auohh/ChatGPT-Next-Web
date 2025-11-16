@@ -307,8 +307,9 @@ export const useAppConfig = createPersistStore(
           // 确保所有必需的字段都存在
           const defaultVisibility = DEFAULT_CONFIG.chatActionVisibility;
           Object.keys(defaultVisibility).forEach(key => {
-            if (state.chatActionVisibility[key] === undefined) {
-              state.chatActionVisibility[key] = defaultVisibility[key];
+            const typedKey = key as keyof typeof defaultVisibility;
+            if (state.chatActionVisibility[typedKey] === undefined) {
+              state.chatActionVisibility[typedKey] = defaultVisibility[typedKey];
             }
           });
         }
