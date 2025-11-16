@@ -77,12 +77,21 @@ export function MessageSelector(props: {
   const session = chatStore.currentSession();
   const isValid = (m: ChatMessage) => m.content && !m.isError && !m.streaming;
   const allMessages = useMemo(() => {
-    let startIndex = Math.max(0, session.clearContextIndex ?? 0);
+    // 数据迁移：向后兼容旧的 clearContextIndex
+    if ((session as any).clearContextIndex !== undefined && session.clearContextIndexes === undefined) {
+      session.clearContextIndexes = [(session as any).clearContextIndex];
+      delete (session as any).clearContextIndex;
+    }
+
+    const clearContextIndexes = session.clearContextIndexes ?? [];
+    let startIndex = clearContextIndexes.length > 0
+      ? Math.max(...clearContextIndexes)
+      : 0;
     if (startIndex === session.messages.length - 1) {
       startIndex = 0;
     }
     return session.messages.slice(startIndex);
-  }, [session.messages, session.clearContextIndex]);
+  }, [session.messages, session.clearContextIndexes]);
 
   const messages = useMemo(
     () =>

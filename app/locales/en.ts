@@ -59,6 +59,8 @@ const en: LocaleType = {
       RefreshToast: "Title refresh request sent",
       Speech: "Play",
       StopSpeech: "Stop",
+      AddClearContext: "Add Divider",
+      RemoveClearContext: "Remove Divider",
     },
     Commands: {
       new: "Start a new chat",

@@ -90,7 +90,7 @@ export interface ChatSession {
   stat: ChatStat;
   lastUpdate: number;
   lastSummarizeIndex: number;
-  clearContextIndex?: number;
+  clearContextIndexes?: number[];
 
   mask: Mask;
 }
@@ -100,6 +100,14 @@ export const BOT_HELLO: ChatMessage = createMessage({
   role: "assistant",
   content: Locale.Store.BotHello,
 });
+
+// 数据迁移函数：将旧的 clearContextIndex 迁移到 clearContextIndexes
+function migrateClearContextIndex(session: ChatSession): void {
+  if ((session as any).clearContextIndex !== undefined && session.clearContextIndexes === undefined) {
+    session.clearContextIndexes = [(session as any).clearContextIndex];
+    delete (session as any).clearContextIndex;
+  }
+}
 
 function createEmptySession(): ChatSession {
   return {
@@ -542,7 +550,15 @@ export const useChatStore = createPersistStore(
       async getMessagesWithMemory() {
         const session = get().currentSession();
         const modelConfig = session.mask.modelConfig;
-        const clearContextIndex = session.clearContextIndex ?? 0;
+
+        // 数据迁移：向后兼容旧的 clearContextIndex
+        migrateClearContextIndex(session);
+
+        // 获取最新的清除点索引，如果没有清除点则为 0
+        const clearContextIndexes = session.clearContextIndexes ?? [];
+        const clearContextIndex = clearContextIndexes.length > 0
+          ? Math.max(...clearContextIndexes)
+          : 0;
         const messages = session.messages.slice();
         const totalMessageCount = session.messages.length;
 
@@ -724,9 +740,13 @@ export const useChatStore = createPersistStore(
             },
           });
         }
+        const clearContextIndexes = session.clearContextIndexes ?? [];
+        const maxClearContextIndex = clearContextIndexes.length > 0
+          ? Math.max(...clearContextIndexes)
+          : 0;
         const summarizeIndex = Math.max(
           session.lastSummarizeIndex,
-          session.clearContextIndex ?? 0,
+          maxClearContextIndex,
         );
         let toBeSummarizedMsgs = messages
           .filter((msg) => !msg.isError)

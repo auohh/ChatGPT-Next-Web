@@ -55,6 +55,8 @@ const tw = {
       Edit: "編輯",
       RefreshTitle: "重新整理標題",
       RefreshToast: "已傳送重新整理標題請求",
+      AddClearContext: "新增切割點",
+      RemoveClearContext: "移除切割點",
     },
     Commands: {
       new: "新建聊天",

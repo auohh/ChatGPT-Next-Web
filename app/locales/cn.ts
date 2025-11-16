@@ -58,6 +58,8 @@ const cn = {
       RefreshToast: "已发送刷新标题请求",
       Speech: "朗读",
       StopSpeech: "停止",
+      AddClearContext: "添加切割点",
+      RemoveClearContext: "移除切割点",
     },
     Commands: {
       new: "新建聊天",

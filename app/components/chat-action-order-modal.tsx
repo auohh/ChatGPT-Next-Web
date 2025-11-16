@@ -188,7 +188,13 @@ export function ChatActionOrderModal({ onClose }: ChatActionOrderModalProps) {
     dragImage.style.transform = 'rotate(2deg)';
     dragImage.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
     document.body.appendChild(dragImage);
-    e.dataTransfer.setDragImage(dragImage, e.offsetX, e.offsetY);
+
+    // 获取鼠标相对于拖拽元素的位置
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+
+    e.dataTransfer.setDragImage(dragImage, offsetX, offsetY);
     setTimeout(() => document.body.removeChild(dragImage), 0);
   };
 
@@ -316,8 +322,6 @@ export function ChatActionOrderModal({ onClose }: ChatActionOrderModalProps) {
             onClick={saveSettings}
           />,
         ]}
-        width="800px"
-        height="600px"
       >
         <div className={styles["split-container"]}>
           {/* 左侧：可用工具 */}

@@ -381,7 +381,7 @@ export function PromptHints(props: {
   );
 }
 
-function ClearContextDivider() {
+function ClearContextDivider({ clearIndex }: { clearIndex: number }) {
   const chatStore = useChatStore();
   const session = chatStore.currentSession();
 
@@ -391,7 +391,15 @@ function ClearContextDivider() {
       onClick={() =>
         chatStore.updateTargetSession(
           session,
-          (session) => (session.clearContextIndex = undefined),
+          (session) => {
+            const clearContextIndexes = session.clearContextIndexes ?? [];
+            const indexToRemove = clearContextIndexes.indexOf(clearIndex);
+
+            if (indexToRemove !== -1) {
+              clearContextIndexes.splice(indexToRemove, 1);
+              session.clearContextIndexes = clearContextIndexes.length > 0 ? clearContextIndexes : undefined;
+            }
+          },
         )
       }
     >
@@ -930,12 +938,23 @@ export function ChatActions(props: {
           icon={<BreakIcon />}
           onClick={() => {
             chatStore.updateTargetSession(session, (session) => {
-              if (session.clearContextIndex === session.messages.length) {
-                session.clearContextIndex = undefined;
+              const clearContextIndexes = session.clearContextIndexes ?? [];
+              const currentLength = session.messages.length;
+
+              // 检查是否已经存在当前位置的清除点
+              const existingIndex = clearContextIndexes.indexOf(currentLength);
+
+              if (existingIndex !== -1) {
+                // 如果存在，则移除这个清除点
+                clearContextIndexes.splice(existingIndex, 1);
               } else {
-                session.clearContextIndex = session.messages.length;
+                // 如果不存在，则添加新的清除点
+                clearContextIndexes.push(currentLength);
                 session.memoryPrompt = "";
               }
+
+              // 更新清除点数组
+              session.clearContextIndexes = clearContextIndexes.length > 0 ? clearContextIndexes : undefined;
             });
           }}
         />
@@ -1392,7 +1411,15 @@ function ChatImpl() {
     clear: () =>
       chatStore.updateTargetSession(
         session,
-        (session) => (session.clearContextIndex = session.messages.length),
+        (session) => {
+          const clearContextIndexes = session.clearContextIndexes ?? [];
+          const currentLength = session.messages.length;
+
+          if (!clearContextIndexes.includes(currentLength)) {
+            clearContextIndexes.push(currentLength);
+            session.clearContextIndexes = clearContextIndexes;
+          }
+        },
       ),
     fork: () => chatStore.forkSession(),
     del: () => chatStore.deleteSession(chatStore.currentSessionIndex),
@@ -1528,6 +1555,31 @@ function ChatImpl() {
 
   const onDelete = (msgId: string) => {
     deleteMessage(msgId);
+  };
+
+  const onAddClearContext = (messageIndex: number) => {
+    // 计算在原始消息数组中的索引
+    const originalMessageIndex = messageIndex + msgRenderIndex - context.length;
+    const clearIndex = originalMessageIndex + 1; // 在当前消息后添加切割点
+
+    chatStore.updateTargetSession(session, (session) => {
+      const clearContextIndexes = session.clearContextIndexes ?? [];
+
+      // 检查是否已经存在这个清除点
+      if (clearContextIndexes.includes(clearIndex)) {
+        // 如果已经存在，则移除这个清除点
+        const indexToRemove = clearContextIndexes.indexOf(clearIndex);
+        clearContextIndexes.splice(indexToRemove, 1);
+      } else {
+        // 如果不存在，则添加新的清除点
+        clearContextIndexes.push(clearIndex);
+        // 排序清除点索引
+        clearContextIndexes.sort((a, b) => a - b);
+        session.memoryPrompt = "";
+      }
+
+      session.clearContextIndexes = clearContextIndexes.length > 0 ? clearContextIndexes : undefined;
+    });
   };
 
   const onResend = (message: ChatMessage) => {
@@ -1744,12 +1796,7 @@ function ChatImpl() {
     scrollDomToBottom();
   }
 
-  // clear context index = context length + index in messages
-  const clearContextIndex =
-    (session.clearContextIndex ?? -1) >= 0
-      ? session.clearContextIndex! + context.length - msgRenderIndex
-      : -1;
-
+  
   const [showPromptModal, setShowPromptModal] = useState(false);
 
   const clientConfig = useMemo(() => getClientConfig(), []);
@@ -1976,12 +2023,18 @@ function ChatImpl() {
       ) {
         event.preventDefault();
         chatStore.updateTargetSession(session, (session) => {
-          if (session.clearContextIndex === session.messages.length) {
-            session.clearContextIndex = undefined;
+          const clearContextIndexes = session.clearContextIndexes ?? [];
+          const currentLength = session.messages.length;
+          const existingIndex = clearContextIndexes.indexOf(currentLength);
+
+          if (existingIndex !== -1) {
+            clearContextIndexes.splice(existingIndex, 1);
           } else {
-            session.clearContextIndex = session.messages.length;
+            clearContextIndexes.push(currentLength);
             session.memoryPrompt = ""; // will clear memory
           }
+
+          session.clearContextIndexes = clearContextIndexes.length > 0 ? clearContextIndexes : undefined;
         });
       }
     };
@@ -2108,8 +2161,13 @@ function ChatImpl() {
                     !isContext;
                   const showTyping = message.preview || message.streaming;
 
-                  const shouldShowClearContextDivider =
-                    i === clearContextIndex - 1;
+                  // 计算在原始消息数组中的索引
+                  const originalMessageIndex = i + msgRenderIndex - context.length;
+
+                  // 找到对应的原始清除点索引
+                  const matchingClearIndex = session.clearContextIndexes?.find(
+                    index => index === originalMessageIndex + 1
+                  );
 
                   return (
                     <Fragment key={message.id}>
@@ -2228,6 +2286,15 @@ function ChatImpl() {
                                             getMessageTextContent(message),
                                           )
                                         }
+                                      />
+                                      <ChatAction
+                                        text={
+                                          matchingClearIndex !== undefined
+                                            ? Locale.Chat.Actions.RemoveClearContext
+                                            : Locale.Chat.Actions.AddClearContext
+                                        }
+                                        icon={<BreakIcon />}
+                                        onClick={() => onAddClearContext(i)}
                                       />
                                       {config.ttsConfig.enable && (
                                         <ChatAction
@@ -2350,7 +2417,9 @@ function ChatImpl() {
                           </div>
                         </div>
                       </div>
-                      {shouldShowClearContextDivider && <ClearContextDivider />}
+                      {matchingClearIndex !== undefined && (
+                        <ClearContextDivider clearIndex={matchingClearIndex} />
+                      )}
                     </Fragment>
                   );
                 })}
