@@ -235,11 +235,9 @@ export class ChatGPTApi implements LLMApi {
         temperature: (!isO1OrO3 && !isGpt5) ? modelConfig.temperature : 1,
         presence_penalty: !isO1OrO3 ? modelConfig.presence_penalty : 0,
         frequency_penalty: !isO1OrO3 ? modelConfig.frequency_penalty : 0,
-        top_p: !isO1OrO3 ? modelConfig.top_p : 1,
-        // max_tokens: Math.max(modelConfig.max_tokens, 1024),
-        // Please do not ask me why not send max_tokens, no reason, this param is just shit, I dont want to explain anymore.
+        top_p: !isO1OrO3 && !isGpt5 ? modelConfig.top_p : 1,
       };
-      
+
       if (isGpt5) {
         const r = requestPayload as any;
         // see https://platform.openai.com/docs/guides/latest-model?reasoning-effort-mode=chat#gpt-5-parameter-compatibility
@@ -247,7 +245,6 @@ export class ChatGPTApi implements LLMApi {
         delete r.top_p;
         delete r.logprobs;
         delete r.presence_penalty;
-        delete r.max_tokens;
         r.max_completion_tokens = modelConfig.max_tokens;
         r.stream = true;
       } else if (isO1OrO3) {
@@ -261,12 +258,11 @@ export class ChatGPTApi implements LLMApi {
 
         // o1/o3 uses max_completion_tokens to control the number of tokens (https://platform.openai.com/docs/guides/reasoning#controlling-costs)
         requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
-      }
-
-
-      // add max_tokens to vision model
-      if (visionModel && !isO1OrO3 && ! isGpt5) {
-        requestPayload["max_tokens"] = Math.max(modelConfig.max_tokens, 4000);
+      } else {
+        // for normal models, use max_tokens
+        // vision models require a minimum of 4000 tokens
+        const minTokens = visionModel ? 4000 : 1024;
+        requestPayload["max_tokens"] = Math.max(modelConfig.max_tokens, minTokens);
       }
     }
 
