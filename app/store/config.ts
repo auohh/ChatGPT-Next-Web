@@ -126,6 +126,7 @@ export const DEFAULT_CONFIG = {
     showPluginSelector: true, // 插件选择
     showShortcutKey: true, // 快捷键
     showMcpTools: true, // MCP工具
+    showCompareMode: true, // 多模型对比模式
   },
 
   // 新增：聊天界面按钮排序配置
@@ -147,7 +148,30 @@ export const DEFAULT_CONFIG = {
     "pluginSelector", // 插件选择器
     "shortcutKey", // 快捷键
     "mcpTools", // MCP工具
+    "compareMode", // 多模型对比模式
   ],
+
+  // 新增：多模型对比配置
+  compareConfig: {
+    showCompareMode: true,          // 是否在 UI 上显示对比模式入口
+    enabled: true,                  // 是否启用该功能
+    maxModels: 6,                   // 最大对比模型数
+    defaultLayout: 'grid' as const, // 默认布局
+    quickPresets: [                 // 快速预设
+      {
+        name: "GPT vs Claude",
+        models: ["gpt-4o@openai", "claude-3-5-sonnet-latest@anthropic"],
+      },
+      {
+        name: "国内三杰",
+        models: [
+          "deepseek-chat@deepseek",
+          "kimi-latest@moonshot",
+          "glm-4-flash@chatglm"
+        ],
+      },
+    ] as const,
+  },
 };
 
 export type ChatConfig = typeof DEFAULT_CONFIG;
@@ -239,7 +263,7 @@ export const useAppConfig = createPersistStore(
   }),
   {
     name: StoreKey.Config,
-    version: 4.2,
+    version: 4.3,
 
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
@@ -317,6 +341,29 @@ export const useAppConfig = createPersistStore(
         // 添加聊天界面按钮排序配置
         if (!state.chatActionOrder || state.chatActionOrder.length === 0) {
           state.chatActionOrder = [...DEFAULT_CONFIG.chatActionOrder];
+        }
+      }
+
+      if (version < 4.3) {
+        // 确保多模型对比相关配置存在
+        if (!state.chatActionVisibility) {
+          state.chatActionVisibility = { ...DEFAULT_CONFIG.chatActionVisibility };
+        } else if (state.chatActionVisibility.showCompareMode === undefined) {
+          state.chatActionVisibility.showCompareMode =
+            DEFAULT_CONFIG.chatActionVisibility.showCompareMode;
+        }
+
+        // 确保按钮排序包含 compareMode
+        if (
+          !state.chatActionOrder ||
+          !state.chatActionOrder.includes("compareMode")
+        ) {
+          state.chatActionOrder = [...DEFAULT_CONFIG.chatActionOrder];
+        }
+
+        // 确保对比功能配置存在
+        if (!state.compareConfig) {
+          state.compareConfig = { ...DEFAULT_CONFIG.compareConfig };
         }
       }
 

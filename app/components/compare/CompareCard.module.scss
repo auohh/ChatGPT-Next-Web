@@ -1,0 +1,229 @@
+@import "../../styles/animation.scss";
+
+.compare-card {
+  background-color: var(--white);
+  border: 1px solid var(--border-in-light);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  box-shadow: var(--card-shadow);
+
+  &.streaming {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 15%, transparent);
+  }
+
+  &.error {
+    border-color: #ff5757;
+    box-shadow: 0 0 0 2px color-mix(in srgb, #ff5757 15%, transparent);
+  }
+
+  &.stopped {
+    border-color: rgba(158, 158, 158, 0.5);
+    opacity: 0.8;
+  }
+
+  &.grid-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 200px;
+  }
+
+  &.list-layout {
+    margin-bottom: 10px;
+
+    &.collapsed {
+      .card-content,
+      .card-actions {
+        display: none;
+      }
+    }
+  }
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-in-light);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: var(--hover-color);
+  }
+
+  .list-layout & {
+    cursor: pointer;
+  }
+
+  .grid-layout & {
+    cursor: default;
+  }
+}
+
+.model-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--black);
+}
+
+.provider-name {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.status-text {
+  font-weight: 500;
+}
+
+.expand-icon {
+  margin-left: 6px;
+  transition: transform 0.2s ease;
+}
+
+.error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background-color: color-mix(in srgb, #ff5757 20%, transparent);
+  color: #ff5757;
+  border-radius: 50%;
+  font-weight: bold;
+  font-size: 10px;
+}
+
+.stopped-icon {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.card-content {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 100px;
+  max-height: 400px;
+  font-size: 14px;
+  line-height: 1.6;
+
+  .grid-layout & {
+    max-height: none;
+  }
+
+  // Markdown 内容样式
+  :global(.markdown) {
+    p {
+      margin-bottom: 12px;
+    }
+
+    code {
+      background-color: var(--hover-color);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    pre {
+      background-color: var(--hover-color);
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+  }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--black);
+  opacity: 0.45;
+
+  svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+.error-message {
+  padding: 16px;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.token-count {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-in-light);
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.35);
+  text-align: right;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-in-light);
+  flex-wrap: wrap;
+}
+
+// 响应式设计
+@media (max-width: 768px) {
+  .compare-card {
+    border-radius: 8px;
+  }
+
+  .card-header {
+    padding: 10px 12px;
+  }
+
+  .card-content {
+    padding: 12px;
+    font-size: 13px;
+  }
+
+  .card-actions {
+    padding: 10px 12px;
+  }
+
+  .model-name {
+    font-size: 13px;
+  }
+
+  .provider-name {
+    font-size: 11px;
+  }
+}

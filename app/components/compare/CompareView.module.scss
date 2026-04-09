@@ -1,0 +1,42 @@
+.compare-view {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.compare-cards {
+  background-color: var(--white);
+  border: 1px solid var(--border-in-light);
+  border-radius: 0 0 12px 12px;
+  border-top: none;
+  padding: 16px;
+  animation: slide-in ease 0.3s;
+
+  &.grid-layout {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  &.list-layout {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+// 响应式设计
+@media (max-width: 1024px) {
+  .compare-cards.grid-layout {
+    grid-template-columns: 1fr; // 平板/手机端单列
+  }
+}
+
+@media (max-width: 768px) {
+  .compare-view {
+    margin-bottom: 10px;
+  }
+
+  .compare-cards {
+    padding: 12px;
+    gap: 12px;
+  }
+}

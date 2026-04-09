@@ -14,6 +14,12 @@ import type {
 } from "../client/api";
 import { getClientApi } from "../client/api";
 import { ChatControllerPool } from "../client/controller";
+import { CompareRequestPool } from "../client/compare-manager";
+import type {
+  CompareMeta,
+  CompareResponse,
+  CompareStatus,
+} from "../typing";
 import { showToast } from "../components/ui-lib";
 import {
   DEFAULT_INPUT_TEMPLATE,
@@ -34,7 +40,7 @@ import { createPersistStore } from "../utils/store";
 import { estimateTokenLength } from "../utils/token";
 import { ModelConfig, ModelType, useAppConfig } from "./config";
 import { useAccessStore } from "./access";
-import { collectModelsWithDefaultModel } from "../utils/model";
+import { collectModelsWithDefaultModel, getModelProvider } from "../utils/model";
 import { createEmptyMask, Mask } from "./mask";
 import { executeMcpAction, getAllTools, isMcpEnabled } from "../mcp/actions";
 import { extractMcpJson, isMcpJson } from "../mcp/utils";
@@ -54,6 +60,7 @@ export type ChatMessageTool = {
   errorMsg?: string;
 };
 
+// 扩展 ChatMessage 类型，支持多模型对比
 export type ChatMessage = RequestMessage & {
   date: string;
   streaming?: boolean;
@@ -63,6 +70,9 @@ export type ChatMessage = RequestMessage & {
   tools?: ChatMessageTool[];
   audio_url?: string;
   isMcpResponse?: boolean;
+  // 对比模式相关字段
+  compareMeta?: CompareMeta;
+  compareResponses?: CompareResponse[];
 };
 
 export function createMessage(override: Partial<ChatMessage>): ChatMessage {
@@ -93,6 +103,13 @@ export interface ChatSession {
   clearContextIndexes?: number[];
 
   mask: Mask;
+
+  // 可选：会话级对比配置
+  compareConfig?: {
+    enabled: boolean;
+    selectedModels: string[];
+    layout: 'grid' | 'list';
+  };
 }
 
 export const DEFAULT_TOPIC = Locale.Store.DefaultTopic;
@@ -124,6 +141,13 @@ function createEmptySession(): ChatSession {
     lastSummarizeIndex: 0,
 
     mask: createEmptyMask(),
+
+    // 初始化对比配置
+    compareConfig: {
+      enabled: false,
+      selectedModels: [],
+      layout: 'grid',
+    },
   };
 }
 
@@ -267,6 +291,12 @@ export const useChatStore = createPersistStore(
             ...currentSession.mask.modelConfig,
           },
         };
+        // 复制对比配置
+        if (currentSession.compareConfig) {
+          newSession.compareConfig = {
+            ...currentSession.compareConfig,
+          };
+        }
 
         set((state) => ({
           currentSessionIndex: 0,
@@ -282,6 +312,20 @@ export const useChatStore = createPersistStore(
       },
 
       selectSession(index: number) {
+        const currentIndex = get().currentSessionIndex;
+        const sessions = get().sessions;
+
+        // 停止当前会话中可能正在进行对比请求
+        if (currentIndex >= 0 && currentIndex < sessions.length) {
+          const currentSession = sessions[currentIndex];
+          const lastMessage = currentSession?.messages[currentSession.messages.length - 1];
+          if (lastMessage?.compareMeta) {
+            const requestId = lastMessage.compareMeta.requestId;
+            ChatControllerPool.stopAllCompare(requestId);
+            CompareRequestPool.stop(requestId);
+          }
+        }
+
         set({
           currentSessionIndex: index,
         });
@@ -347,6 +391,13 @@ export const useChatStore = createPersistStore(
         const deletedSession = get().sessions.at(index);
 
         if (!deletedSession) return;
+
+        // 清理对比请求状态
+        const lastMessage = deletedSession.messages[deletedSession.messages.length - 1];
+        if (lastMessage?.compareMeta) {
+          ChatControllerPool.stopAllCompare(lastMessage.compareMeta.requestId);
+          CompareRequestPool.remove(lastMessage.compareMeta.requestId);
+        }
 
         const sessions = get().sessions.slice();
         sessions.splice(index, 1);
@@ -419,6 +470,11 @@ export const useChatStore = createPersistStore(
       ) {
         const session = get().currentSession();
         const modelConfig = session.mask.modelConfig;
+
+        // 检查是否启用对比模式（MCP 响应不走对比模式）
+        if (!isMcpResponse && session.compareConfig?.enabled && session.compareConfig.selectedModels.length >= 2) {
+          return get().onUserInputWithCompare(content, attachImages);
+        }
 
         // MCP Response no need to fill template
         let mContent: string | MultimodalContent[] = isMcpResponse
@@ -875,6 +931,465 @@ export const useChatStore = createPersistStore(
             console.error("[Check MCP JSON]", error);
           }
         }
+      },
+
+      // ========== 多模型对比模式方法 ==========
+
+      /**
+       * 启用对比模式
+       */
+      enableCompareMode(selectedModels: string[]): void {
+        const session = get().currentSession();
+        if (!session) return;
+
+        if (selectedModels.length < 2) {
+          showToast("至少选择 2 个模型进行对比");
+          return;
+        }
+
+        const config = useAppConfig.getState();
+        const maxModels = config.compareConfig.maxModels;
+
+        if (selectedModels.length > maxModels) {
+          showToast(`最多选择 ${maxModels} 个模型`);
+          return;
+        }
+
+        get().updateTargetSession(session, (session) => {
+          session.compareConfig = {
+            enabled: true,
+            selectedModels,
+            layout: config.compareConfig.defaultLayout,
+          };
+        });
+
+        showToast(`已启用对比模式，选择了 ${selectedModels.length} 个模型`);
+      },
+
+      /**
+       * 禁用对比模式
+       */
+      disableCompareMode(): void {
+        const session = get().currentSession();
+        if (!session?.compareConfig) return;
+
+        // 停止所有进行中的对比请求
+        if (session.compareConfig.enabled) {
+          const lastMessage = session.messages[session.messages.length - 1];
+          if (lastMessage?.compareMeta) {
+            get().stopCompareRequest(lastMessage.compareMeta.requestId);
+          }
+        }
+
+        get().updateTargetSession(session, (session) => {
+          if (session.compareConfig) {
+            session.compareConfig.enabled = false;
+          }
+        });
+      },
+
+      /**
+       * 更新单个模型的对比回复
+       */
+      updateCompareResponse(
+        sessionId: string,
+        requestId: string,
+        modelKey: string,
+        updater: (response: CompareResponse) => void,
+      ): void {
+        const sessions = get().sessions;
+        const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
+        if (sessionIndex < 0) return;
+
+        const session = sessions[sessionIndex];
+        // compareMeta 在 user 消息上，compareResponses 在紧随其后的 assistant 消息上
+        const userMsgIndex = session.messages.findIndex((m) => m.compareMeta?.requestId === requestId);
+        const messageIndex = userMsgIndex >= 0 ? userMsgIndex + 1 : session.messages.findLastIndex((m) => m.compareResponses);
+
+        if (messageIndex < 0 || !session.messages[messageIndex]?.compareResponses) {
+          console.log("[CompareDebug] updateCompareResponse: cannot find assistant msg", { requestId, modelKey, userMsgIndex, messageIndex });
+          return;
+        }
+
+        const responseIndex = session.messages[messageIndex].compareResponses!.findIndex(
+          (r) => `${r.model}@${r.providerName.toLowerCase()}` === modelKey.toLowerCase()
+        );
+        if (responseIndex >= 0) {
+          get().updateMessage(sessionIndex, messageIndex, (msg) => {
+            if (msg?.compareResponses?.[responseIndex]) {
+              updater(msg.compareResponses[responseIndex]);
+            }
+          });
+        } else {
+          console.log("[CompareDebug] updateCompareResponse: model not found", { modelKey, available: session.messages[messageIndex].compareResponses!.map(r => `${r.model}@${r.providerName}`) });
+        }
+      },
+
+      /**
+       * 设置对比布局模式
+       */
+      setCompareLayout(layout: 'grid' | 'list'): void {
+        const session = get().currentSession();
+        if (!session?.compareConfig) return;
+
+        get().updateTargetSession(session, (session) => {
+          if (session.compareConfig) {
+            session.compareConfig.layout = layout;
+          }
+        });
+
+        // 同时更新最近消息的 compareMeta
+        const lastMessage = session.messages[session.messages.length - 1];
+        if (lastMessage?.compareMeta) {
+          get().updateTargetSession(session, (session) => {
+            const msg = session.messages[session.messages.length - 1];
+            if (msg?.compareMeta) {
+              msg.compareMeta.layout = layout;
+            }
+          });
+        }
+      },
+
+      /**
+       * 发起对比请求（核心方法）
+       */
+      async onUserInputWithCompare(
+        content: string,
+        attachImages?: string[],
+      ): Promise<void> {
+        console.log("[CompareDebug] onUserInputWithCompare called");
+        const session = get().currentSession();
+        console.log("[CompareDebug] session.compareConfig:", session?.compareConfig);
+        if (!session?.compareConfig?.enabled) {
+          console.log("[CompareDebug] compare mode not enabled, returning early");
+          return;
+        }
+
+        const selectedModels = session.compareConfig.selectedModels;
+        if (selectedModels.length < 2) {
+          showToast("至少选择 2 个模型进行对比");
+          return;
+        }
+
+        const modelConfig = session.mask.modelConfig;
+        const requestId = nanoid();
+        const startTime = Date.now();
+
+        // 创建 CompareRequestManager 状态
+        const compareState = CompareRequestPool.create(
+          session.id,
+          requestId,
+          selectedModels,
+        );
+
+        // 创建用户消息（携带元数据）
+        let mContent: string | MultimodalContent[] = fillTemplateWith(content, modelConfig);
+        if (attachImages && attachImages.length > 0) {
+          mContent = [
+            ...(content ? [{ type: "text" as const, text: content }] : []),
+            ...attachImages.map((url) => ({
+              type: "image_url" as const,
+              image_url: { url },
+            })),
+          ];
+        }
+
+        const userMessage: ChatMessage = createMessage({
+          role: "user",
+          content: mContent,
+          compareMeta: {
+            enabled: true,
+            selectedModels,
+            requestId,
+            layout: session.compareConfig.layout,
+          },
+        });
+
+        // 创建助手消息（携带各模型回复容器）
+        const botMessage: ChatMessage = createMessage({
+          role: "assistant",
+          streaming: true,
+          compareResponses: selectedModels.map((modelKey) => {
+            const [model, providerName] = getModelProvider(modelKey);
+            return {
+              model,
+              providerName: providerName || "OpenAI",
+              content: "",
+              status: 'pending' as CompareStatus,
+              startTime,
+            };
+          }),
+        });
+
+        // 获取历史消息
+        const recentMessages = await get().getMessagesWithMemory();
+        const sendMessages = recentMessages.concat(userMessage);
+
+        // 保存消息
+        get().updateTargetSession(session, (session) => {
+          session.messages = session.messages.concat([userMessage, botMessage]);
+        });
+        console.log("[CompareDebug] Messages saved. botMessage.compareResponses:", botMessage.compareResponses?.length, "botMessage.compareMeta:", !!botMessage.compareMeta);
+
+        // 并行发起请求
+        const requests = selectedModels.map(async (modelKey) => {
+          const [model, providerName] = getModelProvider(modelKey);
+          const api: ClientApi = getClientApi((providerName || "OpenAI") as ServiceProvider);
+
+          // 记录开始时间
+          CompareRequestPool.setStartTime(requestId, modelKey, Date.now());
+
+          // 更新状态为 streaming
+          get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+            r.status = 'streaming';
+          });
+          CompareRequestPool.setStatus(requestId, modelKey, 'streaming');
+
+          try {
+            await api.llm.chat({
+              messages: sendMessages,
+              config: {
+                ...modelConfig,
+                model,
+                providerName,
+                stream: true,
+              },
+              onUpdate(message) {
+                get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                  r.content = message;
+                });
+                CompareRequestPool.setContent(requestId, modelKey, message);
+              },
+              onFinish(message) {
+                const latency = Date.now() - (CompareRequestPool.getStartTime(requestId, modelKey) || Date.now());
+                get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                  r.status = 'done';
+                  r.content = message;
+                  r.latency = latency;
+                });
+                CompareRequestPool.setStatus(requestId, modelKey, 'done');
+                ChatControllerPool.removeCompare(requestId, modelKey);
+              },
+              onError(error) {
+                get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                  r.status = 'error';
+                  r.error = error.message;
+                });
+                CompareRequestPool.setError(requestId, modelKey, error.message);
+                ChatControllerPool.removeCompare(requestId, modelKey);
+              },
+              onController(controller) {
+                ChatControllerPool.addCompareController(requestId, modelKey, controller);
+                CompareRequestPool.setController(requestId, modelKey, controller);
+              },
+            });
+          } catch (error: any) {
+            get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+              r.status = 'error';
+              r.error = error?.message || "请求失败";
+            });
+            CompareRequestPool.setError(requestId, modelKey, error?.message || "请求失败");
+            ChatControllerPool.removeCompare(requestId, modelKey);
+          }
+        });
+
+        // 等待所有请求完成（不阻塞UI，各请求独立更新）
+        Promise.allSettled(requests).finally(() => {
+          get().updateTargetSession(session, (session) => {
+            const msg = session.messages.find(m => m.id === botMessage.id);
+            if (msg) msg.streaming = false;
+          });
+        });
+      },
+
+      /**
+       * 采纳某个模型的回复作为正式回复
+       */
+      adoptCompareResult(modelKey: string): void {
+        const session = get().currentSession();
+        if (!session) return;
+
+        const messages = session.messages;
+
+        // 找到最近的对比消息对
+        let lastIndex = messages.length - 1;
+        while (lastIndex >= 0 && !messages[lastIndex].compareResponses) {
+          lastIndex--;
+        }
+
+        if (lastIndex < 0) return;
+
+        const botMessage = messages[lastIndex];
+        const userMessage = messages[lastIndex - 1];
+
+        if (!botMessage.compareResponses) return;
+
+        const selectedResponse = botMessage.compareResponses.find(
+          (r) => `${r.model}@${r.providerName.toLowerCase()}` === modelKey.toLowerCase()
+        );
+        if (!selectedResponse) return;
+
+        // 创建新的消息对（采纳后的正式回复）
+        const newUserMessage = createMessage({
+          ...userMessage,
+          id: nanoid(),
+          compareMeta: undefined,
+          content: userMessage.content,
+        });
+
+        const newBotMessage = createMessage({
+          role: 'assistant',
+          content: selectedResponse.content,
+          model: selectedResponse.model as ModelType,
+          streaming: false,
+        });
+
+        // 替换原消息
+        get().updateTargetSession(session, (session) => {
+          session.messages[lastIndex - 1] = newUserMessage;
+          session.messages[lastIndex] = newBotMessage;
+        });
+
+        // 清理 CompareRequestPool
+        if (botMessage.compareMeta) {
+          CompareRequestPool.remove(botMessage.compareMeta.requestId);
+        }
+
+        showToast(`已采纳 ${selectedResponse.model} 的回复`);
+
+        // 关闭对比模式
+        get().disableCompareMode();
+      },
+
+      /**
+       * 停止对比请求（全部或单个模型）
+       */
+      stopCompareRequest(modelKey?: string): void {
+        const session = get().currentSession();
+        if (!session) return;
+
+        const lastMessage = session.messages[session.messages.length - 1];
+        if (!lastMessage?.compareMeta) return;
+
+        const requestId = lastMessage.compareMeta.requestId;
+
+        if (modelKey) {
+          // 停止单个模型
+          ChatControllerPool.stopCompareModel(requestId, modelKey);
+          CompareRequestPool.stop(requestId, modelKey);
+          get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+            r.status = 'stopped';
+          });
+        } else {
+          // 停止全部
+          ChatControllerPool.stopAllCompare(requestId);
+          CompareRequestPool.stop(requestId);
+          lastMessage.compareResponses?.forEach((r, idx) => {
+            const response = lastMessage.compareResponses?.[idx];
+            if (response && response.status === 'streaming' || response?.status === 'pending') {
+              response.status = 'stopped';
+            }
+          });
+          set(() => ({ sessions: get().sessions }));
+        }
+      },
+
+      /**
+       * 重新发起某个模型的请求
+       */
+      async retryCompareModel(modelKey: string): Promise<void> {
+        const session = get().currentSession();
+        if (!session) return;
+
+        const lastMessage = session.messages[session.messages.length - 1];
+        if (!lastMessage?.compareMeta || !lastMessage.compareResponses) return;
+
+        const requestId = lastMessage.compareMeta.requestId;
+        const response = lastMessage.compareResponses.find(
+          (r) => `${r.model}@${r.providerName.toLowerCase()}` === modelKey.toLowerCase()
+        );
+        if (!response) return;
+
+        const [model, providerName] = getModelProvider(modelKey);
+        const modelConfig = session.mask.modelConfig;
+
+        // 重置状态
+        get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+          r.status = 'streaming';
+          r.content = "";
+          r.error = undefined;
+        });
+        CompareRequestPool.setStatus(requestId, modelKey, 'streaming');
+        CompareRequestPool.setContent(requestId, modelKey, "");
+        CompareRequestPool.setStartTime(requestId, modelKey, Date.now());
+
+        // 获取历史消息（不包括当前的 assistant 消息）
+        const messages = session.messages.slice(0, -1);
+
+        const api: ClientApi = getClientApi((providerName || "OpenAI") as ServiceProvider);
+
+        try {
+          await api.llm.chat({
+            messages,
+            config: {
+              ...modelConfig,
+              model,
+              providerName,
+              stream: true,
+            },
+            onUpdate(message) {
+              get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                r.content = message;
+              });
+              CompareRequestPool.setContent(requestId, modelKey, message);
+            },
+            onFinish(message) {
+              const latency = Date.now() - (CompareRequestPool.getStartTime(requestId, modelKey) || Date.now());
+              get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                r.status = 'done';
+                r.content = message;
+                r.latency = latency;
+              });
+              CompareRequestPool.setStatus(requestId, modelKey, 'done');
+              ChatControllerPool.removeCompare(requestId, modelKey);
+            },
+            onError(error) {
+              get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                r.status = 'error';
+                r.error = error.message;
+              });
+              CompareRequestPool.setError(requestId, modelKey, error.message);
+              ChatControllerPool.removeCompare(requestId, modelKey);
+            },
+            onController(controller) {
+              ChatControllerPool.addCompareController(requestId, modelKey, controller);
+              CompareRequestPool.setController(requestId, modelKey, controller);
+            },
+          });
+        } catch (error: any) {
+          get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+            r.status = 'error';
+            r.error = error?.message || "请求失败";
+          });
+          CompareRequestPool.setError(requestId, modelKey, error?.message || "请求失败");
+          ChatControllerPool.removeCompare(requestId, modelKey);
+        }
+      },
+
+      /**
+       * 检查是否在对比模式
+       */
+      isInCompareMode(): boolean {
+        const session = get().currentSession();
+        return session?.compareConfig?.enabled ?? false;
+      },
+
+      /**
+       * 获取对比模式配置
+       */
+      getCompareConfig() {
+        const session = get().currentSession();
+        return session?.compareConfig;
       },
     };
 

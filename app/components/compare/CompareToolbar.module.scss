@@ -1,0 +1,157 @@
+.compare-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--white);
+  border: 1px solid var(--border-in-light);
+  border-radius: 8px 8px 0 0;
+  border-bottom: none;
+  margin-bottom: 0;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  margin-right: 4px;
+}
+
+.layout-toggle {
+  display: flex;
+  background-color: var(--hover-color);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.layout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--black);
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:hover {
+    background-color: var(--hover-color);
+  }
+
+  &.active {
+    background-color: var(--primary);
+    color: white;
+  }
+}
+
+.toolbar-link {
+  font-size: 12px;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: color-mix(in srgb, var(--primary) 10%, transparent);
+  }
+}
+
+.divider {
+  color: var(--border-in-light);
+  margin: 0 4px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--border-in-light);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-text {
+  font-size: 13px;
+  color: var(--black);
+  font-weight: 500;
+}
+
+// 响应式设计
+@media (max-width: 768px) {
+  .compare-toolbar {
+    padding: 10px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+
+  .toolbar-group {
+    font-size: 11px;
+  }
+
+  .toolbar-label {
+    display: none; // 移动端隐藏标签
+  }
+
+  .toolbar-link {
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+
+  .toolbar-actions {
+    gap: 4px;
+
+    :global(.icon-button) {
+      padding: 4px 8px;
+
+      .text {
+        display: none; // 移动端隐藏文字
+      }
+    }
+  }
+}

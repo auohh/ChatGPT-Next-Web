@@ -87,6 +87,13 @@ import { Prompt, usePromptStore } from "../store/prompt";
 import Locale from "../locales";
 
 import { IconButton } from "./button";
+import {
+  CompareModeButton,
+  CompareView,
+  CompareModelSelector,
+} from "./compare";
+import { ErrorBoundary } from "./error";
+import type { CompareMeta, CompareResponse } from "../typing";
 import styles from "./chat.module.scss";
 import { Tooltip } from "./tooltip";
 import { SimpleTooltip } from "./simple-tooltip";
@@ -568,6 +575,7 @@ export function ChatActions(props: {
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showPluginSelector, setShowPluginSelector] = useState(false);
   const [showUploadImage, setShowUploadImage] = useState(false);
+  const [showCompareModelSelector, setShowCompareModelSelector] = useState(false);
 
   const [showSizeSelector, setShowSizeSelector] = useState(false);
   const [showQualitySelector, setShowQualitySelector] = useState(false);
@@ -1033,17 +1041,41 @@ export function ChatActions(props: {
       mcpTools: !isMobileScreen && config.chatActionVisibility.showMcpTools ? (
         <MCPAction key="mcpTools" />
       ) : null,
+
+      compareMode: (config.chatActionVisibility as any).showCompareMode ? (
+        <CompareModeButton
+          key="compareMode"
+          isEnabled={session.compareConfig?.enabled ?? false}
+          selectedModels={session.compareConfig?.selectedModels ?? []}
+          onToggle={() => {
+            if (session.compareConfig?.enabled) {
+              // 禁用对比模式
+              chatStore.updateTargetSession(session, (s) => {
+                s.compareConfig = undefined;
+              });
+            } else {
+              // 打开模型选择器
+              setShowCompareModelSelector(true);
+            }
+          }}
+          onModelSelect={() => setShowCompareModelSelector(true)}
+        />
+      ) : null,
     };
   }, [
     couldStop, props.hitBottom, config.chatActionVisibility, showUploadImage,
     theme, session.mask.modelConfig.historyMessageCount, tempHistoryCount,
     currentModel, currentModelName, currentSize, currentQuality, currentStyle,
-    quickSwitchModels.length, models, isMobileScreen, currentProviderName
+    quickSwitchModels.length, models, isMobileScreen, currentProviderName,
+    session.compareConfig, chatStore
   ]);
 
-  // 根据排序配置渲染按钮
+  // 根据排序配置渲染按钮（确保所有已定义的 action 都会被渲染）
   const renderOrderedActions = () => {
-    return config.chatActionOrder
+    const order = config.chatActionOrder ?? [];
+    // 补充 order 中没有但 allChatActions 中存在的 action（防止新功能因旧配置缺失而不显示）
+    const orderedKeys = [...new Set([...order, ...Object.keys(allChatActions)])];
+    return orderedKeys
       .map(actionKey => actionKey in allChatActions ? allChatActions[actionKey as keyof typeof allChatActions] : null)
       .filter(Boolean);
   };
@@ -1174,6 +1206,48 @@ export function ChatActions(props: {
           onSelection={(s) => {
             chatStore.updateTargetSession(session, (session) => {
               session.mask.plugin = s as string[];
+            });
+          }}
+        />
+      )}
+
+      {/* 对比模型选择器弹窗 */}
+      {showCompareModelSelector && (
+        <CompareModelSelector
+          visible={showCompareModelSelector}
+          onClose={() => setShowCompareModelSelector(false)}
+          selectedModels={session.compareConfig?.selectedModels ?? []}
+          enabled={session.compareConfig?.enabled ?? false}
+          maxModels={config.compareConfig.maxModels}
+          minModels={2}
+          onChange={(models) => {
+            chatStore.updateTargetSession(session, (s) => {
+              if (s.compareConfig) {
+                s.compareConfig = {
+                  ...s.compareConfig,
+                  selectedModels: models,
+                };
+              } else if (models.length >= 2) {
+                s.compareConfig = {
+                  enabled: false,
+                  selectedModels: models,
+                  layout: "grid",
+                };
+              }
+            });
+          }}
+          onEnabledChange={(enabled) => {
+            chatStore.updateTargetSession(session, (s) => {
+              const currentModels = s.compareConfig?.selectedModels ?? [];
+              if (s.compareConfig) {
+                s.compareConfig = { ...s.compareConfig, enabled };
+              } else if (currentModels.length >= 0) {
+                s.compareConfig = {
+                  enabled,
+                  selectedModels: currentModels,
+                  layout: "grid",
+                };
+              }
             });
           }}
         />
@@ -2350,24 +2424,85 @@ function ChatImpl() {
                             </div>
                           )}
                           <div className={styles["chat-message-item"]}>
-                            <Markdown
-                              key={message.streaming ? "loading" : "done"}
-                              content={getMessageTextContent(message)}
-                              loading={
-                                (message.preview || message.streaming) &&
-                                message.content.length === 0 &&
-                                !isUser
+                            {/* 对比模式：显示多模型对比视图 */}
+                            {(() => {
+                              if (message.compareResponses || message.compareMeta) {
+                                console.log("[CompareDebug] message has compare data:", {
+                                  id: message.id,
+                                  role: message.role,
+                                  hasCompareResponses: !!message.compareResponses,
+                                  hasCompareMeta: !!message.compareMeta,
+                                  responsesCount: message.compareResponses?.length,
+                                  compareMeta: message.compareMeta,
+                                });
                               }
-                              //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
-                              onDoubleClickCapture={() => {
-                                if (!isMobileScreen) return;
-                                setUserInput(getMessageTextContent(message));
-                              }}
-                              fontSize={fontSize}
-                              fontFamily={fontFamily}
-                              parentRef={scrollRef}
-                              defaultShow={i >= messages.length - 6}
-                            />
+                              return null;
+                            })()}
+                            {message.compareResponses ? (
+                              <ErrorBoundary>
+                                <CompareView
+                                  compareMeta={message.compareMeta ?? { enabled: true, selectedModels: [], requestId: "", layout: "grid" }}
+                                  compareResponses={message.compareResponses}
+                                  layout={message.compareMeta?.layout ?? session.compareConfig?.layout ?? "grid"}
+                                onUpdate={(modelKey, updater) => {
+                                  chatStore.updateTargetSession(session, (s) => {
+                                    const msg = s.messages.find((m) => m.id === message.id);
+                                    if (msg?.compareResponses) {
+                                      const response = msg.compareResponses.find(
+                                        (r) => `${r.model}@${r.providerName}` === modelKey
+                                      );
+                                      if (response) {
+                                        updater(response);
+                                      }
+                                    }
+                                  });
+                                }}
+                                onAdopt={(modelKey) => {
+                                  chatStore.updateTargetSession(session, (s) => {
+                                    const msg = s.messages.find((m) => m.id === message.id);
+                                    if (msg?.compareResponses) {
+                                      const response = msg.compareResponses.find(
+                                        (r) => `${r.model}@${r.providerName}` === modelKey
+                                      );
+                                      if (response?.content) {
+                                        msg.content = response.content;
+                                        msg.compareMeta = undefined;
+                                        msg.compareResponses = undefined;
+                                      }
+                                    }
+                                  });
+                                }}
+                                onStop={(modelKey) => {
+                                  chatStore.stopCompareRequest(modelKey);
+                                }}
+                                onRetry={(modelKey) => {
+                                  chatStore.retryCompareModel(modelKey);
+                                }}
+                                onLayoutChange={(layout) => {
+                                  chatStore.setCompareLayout(layout);
+                                }}
+                              />
+                              </ErrorBoundary>
+                            ) : (
+                              <Markdown
+                                key={message.streaming ? "loading" : "done"}
+                                content={getMessageTextContent(message)}
+                                loading={
+                                  (message.preview || message.streaming) &&
+                                  message.content.length === 0 &&
+                                  !isUser
+                                }
+                                //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
+                                onDoubleClickCapture={() => {
+                                  if (!isMobileScreen) return;
+                                  setUserInput(getMessageTextContent(message));
+                                }}
+                                fontSize={fontSize}
+                                fontFamily={fontFamily}
+                                parentRef={scrollRef}
+                                defaultShow={i >= messages.length - 6}
+                              />
+                            )}
                             {getMessageImages(message).length == 1 && (
                               <img
                                 className={styles["chat-message-item-image"]}

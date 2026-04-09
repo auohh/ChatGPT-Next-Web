@@ -927,6 +927,42 @@ const cn = {
     GenerateParams: "生成参数",
     Detail: "详情",
   },
+  Compare: {
+    Title: "多模型对比",
+    Button: "对比模式",
+    EnterMode: "对比模式",
+    ExitMode: "退出对比模式",
+    ActiveCount: (count: number) => `对比 (${count})`,
+    Description: "选择多个模型同时回答",
+    SelectModels: "选择对比模型",
+    MinModels: "至少选择 2 个模型",
+    MaxModels: "最多选择 6 个模型",
+    SelectCount: (count: number) => `已选择 ${count} 个模型`,
+    Enabled: "已开启",
+    Disabled: "未开启",
+    Status: {
+      Pending: "等待中",
+      Streaming: "生成中",
+      Done: "已完成",
+      Error: "失败",
+      Stopped: "已停止",
+    },
+    Actions: {
+      Adopt: "采纳",
+      Copy: "复制",
+      Retry: "重试",
+      Stop: "停止",
+      StopAll: "全部停止",
+      ExpandAll: "全部展开",
+      CollapseAll: "全部折叠",
+    },
+    Layout: {
+      Grid: "网格视图",
+      List: "列表视图",
+    },
+    Empty: "请选择至少 2 个模型开始对比",
+    AdoptedToast: (model: string) => `已采纳 ${model} 的回复`,
+  },
 };
 
 type DeepPartial<T> = T extends object
