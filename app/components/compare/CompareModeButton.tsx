@@ -39,11 +39,17 @@ export function CompareModeButton({
     return Locale.Compare.EnterMode;
   };
 
+  const isActive = isEnabled && selectedModels.length > 0;
+
   return (
-    <ChatAction
-      text={getText()}
-      icon={isEnabled ? <CompareIconEnabled /> : <CompareIconDisabled />}
-      onClick={() => onModelSelect(selectedModels)}
-    />
+    <div
+      style={isActive ? { borderLeft: "3px solid var(--primary)" } : undefined}
+    >
+      <ChatAction
+        text={getText()}
+        icon={isEnabled ? <CompareIconEnabled /> : <CompareIconDisabled />}
+        onClick={() => onModelSelect(selectedModels)}
+      />
+    </div>
   );
 }

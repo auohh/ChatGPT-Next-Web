@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useAllModels } from "../../utils/hooks";
 import { groupBy } from "lodash-es";
 import { showToast } from "../ui-lib";
@@ -117,6 +117,16 @@ export function CompareModelSelector({
     onClose();
   };
 
+  // Fix 4: Escape key to close modal
+  useEffect(() => {
+    if (!visible) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [visible, onClose]);
+
   if (!visible) return null;
 
   return (
@@ -145,14 +155,13 @@ export function CompareModelSelector({
             <span className={styles["tags-placeholder"]}>{Locale.Compare.SelectModels}</span>
           )}
           {selectedModels.map((modelValue) => (
-            <span key={modelValue} className={styles["tag"]}>
+            <span
+              key={modelValue}
+              className={styles["tag"]}
+              onClick={() => removeSelectedModel(modelValue)}
+            >
               <span className={styles["tag-name"]}>{getSelectedModelDisplayName(modelValue)}</span>
-              <button
-                className={styles["tag-remove"]}
-                onClick={() => removeSelectedModel(modelValue)}
-              >
-                ×
-              </button>
+              <span className={styles["tag-remove"]}>×</span>
             </span>
           ))}
           <span className={styles["tags-hint"]}>
@@ -206,6 +215,7 @@ export function CompareModelSelector({
                             key={index}
                             className={`${styles["model-item"]} ${isSelected ? styles.selected : ""} ${!canSelect ? styles.disabled : ""}`}
                             onClick={() => canSelect && toggleModel(modelValue, !isSelected)}
+                            title={!canSelect ? `已达上限 (${selectedModels.length}/${maxModels})` : undefined}
                           >
                             <div
                               className={`${styles.checkbox} ${isSelected ? styles.checked : ''}`}

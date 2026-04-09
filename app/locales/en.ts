@@ -119,7 +119,7 @@ const en: LocaleType = {
     ExitMode: "Exit compare mode",
     ActiveCount: (count: number) => `Compare (${count})`,
     Description: "Compare multiple models simultaneously",
-    SelectModels: "Select Models",
+    SelectModels: "Multi-Model Compare",
     MinModels: "Select at least 2 models",
     MaxModels: "Select up to 6 models",
     SelectCount: (count: number) => `${count} models selected`,

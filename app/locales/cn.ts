@@ -934,7 +934,7 @@ const cn = {
     ExitMode: "退出对比模式",
     ActiveCount: (count: number) => `对比 (${count})`,
     Description: "选择多个模型同时回答",
-    SelectModels: "选择对比模型",
+    SelectModels: "多模型对比",
     MinModels: "至少选择 2 个模型",
     MaxModels: "最多选择 6 个模型",
     SelectCount: (count: number) => `已选择 ${count} 个模型`,
