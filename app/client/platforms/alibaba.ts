@@ -1,5 +1,10 @@
 "use client";
-import { ApiPath, Alibaba, ALIBABA_BASE_URL } from "@/app/constant";
+import {
+  ApiPath,
+  Alibaba,
+  ALIBABA_BASE_URL,
+  ALIBABA_OPENAI_COMPAT_URL,
+} from "@/app/constant";
 import {
   useAccessStore,
   useAppConfig,
@@ -8,7 +13,7 @@ import {
   usePluginStore,
 } from "@/app/store";
 import {
-  preProcessImageContentForAlibabaDashScope,
+  preProcessImageContent,
   streamWithThink,
 } from "@/app/utils/chat";
 import {
@@ -18,12 +23,10 @@ import {
   LLMModel,
   SpeechOptions,
   MultimodalContent,
-  MultimodalContentForAlibaba,
 } from "../api";
 import { getClientConfig } from "@/app/config/client";
 import {
   getMessageTextContent,
-  getMessageTextContentWithoutThinking,
   getTimeoutMSByModel,
   isVisionModel,
 } from "@/app/utils";
@@ -38,24 +41,18 @@ export interface OpenAIListModelResponse {
   }>;
 }
 
-interface RequestInput {
+interface RequestPayload {
   messages: {
-    role: "system" | "user" | "assistant";
+    role: "developer" | "system" | "user" | "assistant";
     content: string | MultimodalContent[];
   }[];
-}
-interface RequestParam {
-  result_format: string;
-  incremental_output?: boolean;
+  stream?: boolean;
+  model: string;
   temperature: number;
-  repetition_penalty?: number;
+  presence_penalty: number;
+  frequency_penalty: number;
   top_p: number;
   max_tokens?: number;
-}
-interface RequestPayload {
-  model: string;
-  input: RequestInput;
-  parameters: RequestParam;
 }
 
 export class QwenApi implements LLMApi {
@@ -70,7 +67,8 @@ export class QwenApi implements LLMApi {
 
     if (baseUrl.length === 0) {
       const isApp = !!getClientConfig()?.isApp;
-      baseUrl = isApp ? ALIBABA_BASE_URL : ApiPath.Alibaba;
+      // Use OpenAI compatible endpoint by default
+      baseUrl = isApp ? ALIBABA_OPENAI_COMPAT_URL : ApiPath.Alibaba;
     }
 
     if (baseUrl.endsWith("/")) {
@@ -86,7 +84,7 @@ export class QwenApi implements LLMApi {
   }
 
   extractMessage(res: any) {
-    return res?.output?.choices?.at(0)?.message?.content ?? "";
+    return res?.choices?.at(0)?.message?.content ?? "";
   }
 
   speech(options: SpeechOptions): Promise<ArrayBuffer> {
@@ -106,31 +104,27 @@ export class QwenApi implements LLMApi {
 
     const messages: ChatOptions["messages"] = [];
     for (const v of options.messages) {
-      const content = (
-        visionModel
-          ? await preProcessImageContentForAlibabaDashScope(v.content)
-          : v.role === "assistant"
-          ? getMessageTextContentWithoutThinking(v)
-          : getMessageTextContent(v)
-      ) as any;
-
+      const content = visionModel
+        ? await preProcessImageContent(v.content)
+        : getMessageTextContent(v);
       messages.push({ role: v.role, content });
     }
 
     const shouldStream = !!options.config.stream;
     const requestPayload: RequestPayload = {
+      messages,
+      stream: shouldStream,
       model: modelConfig.model,
-      input: {
-        messages,
-      },
-      parameters: {
-        result_format: "message",
-        incremental_output: shouldStream,
-        temperature: modelConfig.temperature,
-        // max_tokens: modelConfig.max_tokens,
-        top_p: modelConfig.top_p === 1 ? 0.99 : modelConfig.top_p, // qwen top_p is should be < 1
-      },
+      temperature: modelConfig.temperature,
+      presence_penalty: modelConfig.presence_penalty,
+      frequency_penalty: modelConfig.frequency_penalty,
+      top_p: modelConfig.top_p === 1 ? 0.99 : modelConfig.top_p,
     };
+
+    // Set max_tokens for non-streaming mode
+    if (!shouldStream) {
+      requestPayload.max_tokens = Math.max(modelConfig.max_tokens, 1024);
+    }
 
     const controller = new AbortController();
     options.onController?.(controller);
@@ -138,7 +132,6 @@ export class QwenApi implements LLMApi {
     try {
       const headers = {
         ...getHeaders(),
-        "X-DashScope-SSE": shouldStream ? "enable" : "disable",
       };
 
       const chatPath = this.path(Alibaba.ChatPath(modelConfig.model));
@@ -168,13 +161,12 @@ export class QwenApi implements LLMApi {
           tools as any,
           funcs,
           controller,
-          // parseSSE
+          // parseSSE - OpenAI compatible format
           (text: string, runTools: ChatMessageTool[]) => {
-            // console.log("parseSSE", text, runTools);
             const json = JSON.parse(text);
-            const choices = json.output.choices as Array<{
-              message: {
-                content: string | null | MultimodalContentForAlibaba[];
+            const choices = json.choices as Array<{
+              delta: {
+                content: string;
                 tool_calls: ChatMessageTool[];
                 reasoning_content: string | null;
               };
@@ -182,9 +174,8 @@ export class QwenApi implements LLMApi {
 
             if (!choices?.length) return { isThinking: false, content: "" };
 
-            const tool_calls = choices[0]?.message?.tool_calls;
+            const tool_calls = choices[0]?.delta?.tool_calls;
             if (tool_calls?.length > 0) {
-              const index = tool_calls[0]?.index;
               const id = tool_calls[0]?.id;
               const args = tool_calls[0]?.function?.arguments;
               if (id) {
@@ -198,12 +189,12 @@ export class QwenApi implements LLMApi {
                 });
               } else {
                 // @ts-ignore
-                runTools[index]["function"]["arguments"] += args;
+                runTools[runTools.length - 1]["function"]["arguments"] += args;
               }
             }
 
-            const reasoning = choices[0]?.message?.reasoning_content;
-            const content = choices[0]?.message?.content;
+            const reasoning = choices[0]?.delta?.reasoning_content;
+            const content = choices[0]?.delta?.content;
 
             // Skip if both content and reasoning_content are empty or null
             if (
@@ -224,9 +215,7 @@ export class QwenApi implements LLMApi {
             } else if (content && content.length > 0) {
               return {
                 isThinking: false,
-                content: Array.isArray(content)
-                  ? content.map((item) => item.text).join(",")
-                  : content,
+                content: content,
               };
             }
 
@@ -235,14 +224,14 @@ export class QwenApi implements LLMApi {
               content: "",
             };
           },
-          // processToolMessage, include tool_calls message and tool call results
+          // processToolMessage
           (
             requestPayload: RequestPayload,
             toolCallMessage: any,
             toolCallResult: any[],
           ) => {
-            requestPayload?.input?.messages?.splice(
-              requestPayload?.input?.messages?.length,
+            requestPayload?.messages?.splice(
+              requestPayload?.messages?.length,
               0,
               toolCallMessage,
               ...toolCallResult,

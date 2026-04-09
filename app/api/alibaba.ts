@@ -1,5 +1,6 @@
 import { getServerSideConfig } from "@/app/config/server";
 import {
+  ALIBABA_OPENAI_COMPAT_URL,
   ALIBABA_BASE_URL,
   ApiPath,
   ModelProvider,
@@ -44,7 +45,7 @@ async function request(req: NextRequest) {
   // alibaba use base url or just remove the path
   let path = `${req.nextUrl.pathname}`.replaceAll(ApiPath.Alibaba, "");
 
-  let baseUrl = serverConfig.alibabaUrl || ALIBABA_BASE_URL;
+  let baseUrl = serverConfig.alibabaUrl || ALIBABA_OPENAI_COMPAT_URL;
 
   if (!baseUrl.startsWith("http")) {
     baseUrl = `https://${baseUrl}`;
@@ -69,7 +70,6 @@ async function request(req: NextRequest) {
     headers: {
       "Content-Type": "application/json",
       Authorization: req.headers.get("Authorization") ?? "",
-      "X-DashScope-SSE": req.headers.get("X-DashScope-SSE") ?? "disable",
     },
     method: req.method,
     body: req.body,
