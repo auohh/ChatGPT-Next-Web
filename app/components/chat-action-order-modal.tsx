@@ -146,29 +146,31 @@ export function ChatActionOrderModal({ onClose }: ChatActionOrderModalProps) {
     });
   }, [config, getSelectedTools, getVisibility]);
 
+  const defaultVisibility = {
+    showStop: true,
+    showToBottom: true,
+    showSettings: true,
+    showImageUpload: true,
+    showThemeSwitch: true,
+    showHistoryCount: false,
+    showPromptLibrary: false,
+    showMasks: false,
+    showClearContext: false,
+    showQuickSwitch: false,
+    showModelSelector: true,
+    showSizeSelector: true,
+    showQualitySelector: true,
+    showStyleSelector: true,
+    showPluginSelector: true,
+    showShortcutKey: false,
+    showMcpTools: true,
+    showCompareMode: true,
+  };
+
   // 重置为默认设置
   const resetToDefault = () => {
     config.update((config) => {
-      // 重置为默认的可见性设置
-      config.chatActionVisibility = {
-        showStop: true,
-        showToBottom: true,
-        showSettings: true,
-        showImageUpload: true,
-        showThemeSwitch: true,
-        showHistoryCount: false,
-        showPromptLibrary: false,
-        showMasks: false,
-        showClearContext: false,
-        showQuickSwitch: false,
-        showModelSelector: true,
-        showSizeSelector: true,
-        showQualitySelector: true,
-        showStyleSelector: true,
-        showPluginSelector: true,
-        showShortcutKey: false,
-        showMcpTools: true,
-      };
+      config.chatActionVisibility = { ...defaultVisibility };
       config.chatActionOrder = [...DEFAULT_ORDER];
     });
   };
