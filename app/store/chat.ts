@@ -47,6 +47,41 @@ import { extractMcpJson, isMcpJson } from "../mcp/utils";
 
 const localStorage = safeLocalStorage();
 
+// ========== 对比模式节流机制（Fix #1: 状态更新风暴） ==========
+// 使用 requestAnimationFrame 节流，避免多个模型同时输出时频繁触发 setState
+class CompareUpdateThrottle {
+  private pendingUpdates = new Map<string, { content: string }>();
+  private rafId: number | null = null;
+
+  schedule(requestId: string, modelKey: string, content: string, updateFn: () => void): void {
+    const key = `${requestId}:${modelKey}`;
+    this.pendingUpdates.set(key, { content });
+
+    if (this.rafId === null) {
+      this.rafId = requestAnimationFrame(() => {
+        this.flush(updateFn);
+      });
+    }
+  }
+
+  private flush(updateFn: () => void): void {
+    this.pendingUpdates.clear();
+    this.rafId = null;
+    updateFn();
+  }
+
+  cancel(): void {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    this.pendingUpdates.clear();
+  }
+}
+
+const compareUpdateThrottle = new CompareUpdateThrottle();
+// ========== 节流机制结束 ==========
+
 export type ChatMessageTool = {
   id: string;
   index?: number;
@@ -994,6 +1029,7 @@ export const useChatStore = createPersistStore(
 
       /**
        * 更新单个模型的对比回复
+       * Fix #3: 增加 requestId 校验，避免竞态条件时匹配错误消息
        */
       updateCompareResponse(
         sessionId: string,
@@ -1012,15 +1048,24 @@ export const useChatStore = createPersistStore(
         const session = sessions[sessionIndex];
         // compareMeta 在 user 消息上，compareResponses 在紧随其后的 assistant 消息上
         const userMsgIndex = session.messages.findIndex((m) => m.compareMeta?.requestId === requestId);
-        const messageIndex = userMsgIndex >= 0 ? userMsgIndex + 1 : session.messages.findLastIndex((m) => m.compareResponses);
 
-        if (messageIndex < 0 || !session.messages[messageIndex]?.compareResponses) {
-          console.warn("[CompareDebug] updateCompareResponse: cannot find assistant msg", {
+        // Fix #3: 当找不到 userMsgIndex 时，不要回退到 findLastIndex，直接返回错误
+        // 这样可以避免匹配到之前对比会话的消息
+        if (userMsgIndex < 0) {
+          console.warn("[CompareDebug] updateCompareResponse: user message with requestId NOT FOUND", {
+            requestId, modelKey,
+            totalMsgs: session.messages.length,
+            hasCompareMeta: session.messages.map(m => !!m.compareMeta),
+          });
+          return;
+        }
+
+        const messageIndex = userMsgIndex + 1;
+
+        if (messageIndex >= session.messages.length || !session.messages[messageIndex]?.compareResponses) {
+          console.warn("[CompareDebug] updateCompareResponse: assistant msg NOT FOUND or has no compareResponses", {
             requestId, modelKey, userMsgIndex, messageIndex,
             totalMsgs: session.messages.length,
-            msgRoles: session.messages.map(m => m.role),
-            hasCompareMeta: session.messages.map(m => !!m.compareMeta),
-            hasCompareResponses: session.messages.map(m => !!m.compareResponses),
           });
           return;
         }
@@ -1173,19 +1218,25 @@ export const useChatStore = createPersistStore(
                 stream: true,
               },
               onUpdate(message) {
-                // 所有模型：更新各自的 compareResponse
-                get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
-                  r.content = message;
-                });
-                CompareRequestPool.setContent(requestId, modelKey, message);
-
-                // 主模型：同时写入 botMessage.content（确保消息始终可持久化）
-                if (isPrimary) {
-                  get().updateTargetSession(session, (session) => {
-                    const msg = session.messages.find(m => m.id === botMessage.id);
-                    if (msg) msg.content = message;
+                // Fix #1: 使用节流机制，避免多个模型同时输出时频繁触发 setState
+                compareUpdateThrottle.schedule(requestId, modelKey, message, () => {
+                  // 所有模型：更新各自的 compareResponse
+                  get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
+                    r.content = message;
                   });
-                }
+                  CompareRequestPool.setContent(requestId, modelKey, message);
+
+                  // 主模型：同时写入 botMessage.content（确保消息始终可持久化）
+                  if (isPrimary) {
+                    get().updateTargetSession(session, (session) => {
+                      const userMsgIndex = session.messages.findIndex((m) => m.compareMeta?.requestId === requestId);
+                      if (userMsgIndex >= 0 && userMsgIndex + 1 < session.messages.length) {
+                        const msg = session.messages[userMsgIndex + 1];
+                        if (msg) msg.content = message;
+                      }
+                    });
+                  }
+                });
               },
               onFinish(message) {
                 const latency = Date.now() - (CompareRequestPool.getStartTime(requestId, modelKey) || Date.now());
@@ -1197,13 +1248,16 @@ export const useChatStore = createPersistStore(
                 CompareRequestPool.setStatus(requestId, modelKey, 'done');
                 ChatControllerPool.removeCompare(requestId, modelKey);
 
-                // 主模型：最终确认 content 和 date
+                // 主模型：最终确认 content 和 date（使用 requestId 动态查找，避免闭包捕获过时的引用）
                 if (isPrimary) {
                   get().updateTargetSession(session, (session) => {
-                    const msg = session.messages.find(m => m.id === botMessage.id);
-                    if (msg) {
-                      msg.content = message;
-                      msg.date = new Date().toLocaleString();
+                    const userMsgIndex = session.messages.findIndex((m) => m.compareMeta?.requestId === requestId);
+                    if (userMsgIndex >= 0 && userMsgIndex + 1 < session.messages.length) {
+                      const msg = session.messages[userMsgIndex + 1];
+                      if (msg) {
+                        msg.content = message;
+                        msg.date = new Date().toLocaleString();
+                      }
                     }
                   });
                 }
@@ -1233,13 +1287,25 @@ export const useChatStore = createPersistStore(
 
         // 等待所有请求完成（不阻塞UI，各请求独立更新）
         Promise.allSettled(requests).finally(() => {
+          // 使用 requestId 动态查找消息，避免闭包捕获过时的 botMessage 引用
           get().updateTargetSession(session, (session) => {
-            const msg = session.messages.find(m => m.id === botMessage.id);
-            if (msg) msg.streaming = false;
+            const userMsgIndex = session.messages.findIndex((m) => m.compareMeta?.requestId === requestId);
+            if (userMsgIndex >= 0 && userMsgIndex + 1 < session.messages.length) {
+              const msg = session.messages[userMsgIndex + 1];
+              if (msg) msg.streaming = false;
+            }
           });
 
-          // 与正常模式保持一致：更新 session 元数据并触发标题生成
-          get().onNewMessage(botMessage, session);
+          // 获取最新的消息引用，避免使用过时的闭包变量
+          const currentSession = get().sessions.find(s => s.id === session.id);
+          if (currentSession) {
+            const userMsgIndex = currentSession.messages.findIndex((m) => m.compareMeta?.requestId === requestId);
+            if (userMsgIndex >= 0 && userMsgIndex + 1 < currentSession.messages.length) {
+              const latestBotMessage = currentSession.messages[userMsgIndex + 1];
+              // 与正常模式保持一致：更新 session 元数据并触发标题生成
+              get().onNewMessage(latestBotMessage, currentSession);
+            }
+          }
         });
       },
 
@@ -1301,6 +1367,7 @@ export const useChatStore = createPersistStore(
       /**
        * 停止对比请求（全部或单个模型）
        */
+      // Fix #2: 停止对比请求（全部或单个模型）
       stopCompareRequest(modelKey?: string): void {
         const session = get().currentSession();
         if (!session) return;
@@ -1318,16 +1385,20 @@ export const useChatStore = createPersistStore(
             r.status = 'stopped';
           });
         } else {
-          // 停止全部
+          // 停止全部 - Fix #2: 使用 updater 模式正确更新，不直接变异状态
           ChatControllerPool.stopAllCompare(requestId);
           CompareRequestPool.stop(requestId);
-          lastMessage.compareResponses?.forEach((r, idx) => {
-            const response = lastMessage.compareResponses?.[idx];
-            if (response && response.status === 'streaming' || response?.status === 'pending') {
-              response.status = 'stopped';
+          get().updateTargetSession(session, (session) => {
+            const lastMsg = session.messages[session.messages.length - 1];
+            if (lastMsg?.compareResponses) {
+              lastMsg.compareResponses.forEach((r) => {
+                // Fix #2: 修复运算符优先级问题，添加括号确保正确逻辑
+                if (r.status === 'streaming' || r.status === 'pending') {
+                  r.status = 'stopped';
+                }
+              });
             }
           });
-          set(() => ({ sessions: get().sessions }));
         }
       },
 
