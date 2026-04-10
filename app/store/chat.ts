@@ -886,7 +886,11 @@ export const useChatStore = createPersistStore(
       ) {
         const sessions = get().sessions;
         const index = sessions.findIndex((s) => s.id === targetSession.id);
-        if (index < 0) return;
+        if (index < 0) {
+          console.warn("[CompareDebug] updateTargetSession: session NOT FOUND, id:", targetSession.id,
+            "available ids:", sessions.map(s => s.id));
+          return;
+        }
         updater(sessions[index]);
         set(() => ({ sessions }));
       },
@@ -999,7 +1003,11 @@ export const useChatStore = createPersistStore(
       ): void {
         const sessions = get().sessions;
         const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
-        if (sessionIndex < 0) return;
+        if (sessionIndex < 0) {
+          console.warn("[CompareDebug] updateCompareResponse: session NOT FOUND, sessionId:", sessionId,
+            "available:", sessions.map(s => s.id));
+          return;
+        }
 
         const session = sessions[sessionIndex];
         // compareMeta 在 user 消息上，compareResponses 在紧随其后的 assistant 消息上
@@ -1007,7 +1015,13 @@ export const useChatStore = createPersistStore(
         const messageIndex = userMsgIndex >= 0 ? userMsgIndex + 1 : session.messages.findLastIndex((m) => m.compareResponses);
 
         if (messageIndex < 0 || !session.messages[messageIndex]?.compareResponses) {
-          console.log("[CompareDebug] updateCompareResponse: cannot find assistant msg", { requestId, modelKey, userMsgIndex, messageIndex });
+          console.warn("[CompareDebug] updateCompareResponse: cannot find assistant msg", {
+            requestId, modelKey, userMsgIndex, messageIndex,
+            totalMsgs: session.messages.length,
+            msgRoles: session.messages.map(m => m.role),
+            hasCompareMeta: session.messages.map(m => !!m.compareMeta),
+            hasCompareResponses: session.messages.map(m => !!m.compareResponses),
+          });
           return;
         }
 
@@ -1021,7 +1035,10 @@ export const useChatStore = createPersistStore(
             }
           });
         } else {
-          console.log("[CompareDebug] updateCompareResponse: model not found", { modelKey, available: session.messages[messageIndex].compareResponses!.map(r => `${r.model}@${r.providerName}`) });
+          console.warn("[CompareDebug] updateCompareResponse: model not found", {
+            modelKey,
+            available: session.messages[messageIndex].compareResponses!.map(r => `${r.model}@${r.providerName}`),
+          });
         }
       },
 
@@ -1057,11 +1074,8 @@ export const useChatStore = createPersistStore(
         content: string,
         attachImages?: string[],
       ): Promise<void> {
-        console.log("[CompareDebug] onUserInputWithCompare called");
         const session = get().currentSession();
-        console.log("[CompareDebug] session.compareConfig:", session?.compareConfig);
         if (!session?.compareConfig?.enabled) {
-          console.log("[CompareDebug] compare mode not enabled, returning early");
           return;
         }
 
@@ -1105,10 +1119,14 @@ export const useChatStore = createPersistStore(
           },
         });
 
-        // 创建助手消息（携带各模型回复容器）
+        // 创建助手消息
+        // 关键设计：第一个模型的回复直接写入 content，确保消息始终可持久化
+        const [primaryModel, primaryProviderName] = getModelProvider(selectedModels[0]);
         const botMessage: ChatMessage = createMessage({
           role: "assistant",
           streaming: true,
+          model: primaryModel as ModelType,
+          content: "",
           compareResponses: selectedModels.map((modelKey) => {
             const [model, providerName] = getModelProvider(modelKey);
             return {
@@ -1129,12 +1147,12 @@ export const useChatStore = createPersistStore(
         get().updateTargetSession(session, (session) => {
           session.messages = session.messages.concat([userMessage, botMessage]);
         });
-        console.log("[CompareDebug] Messages saved. botMessage.compareResponses:", botMessage.compareResponses?.length, "botMessage.compareMeta:", !!botMessage.compareMeta);
-
         // 并行发起请求
+        const primaryModelKey = selectedModels[0];
         const requests = selectedModels.map(async (modelKey) => {
           const [model, providerName] = getModelProvider(modelKey);
           const api: ClientApi = getClientApi((providerName || "OpenAI") as ServiceProvider);
+          const isPrimary = modelKey === primaryModelKey;
 
           // 记录开始时间
           CompareRequestPool.setStartTime(requestId, modelKey, Date.now());
@@ -1155,10 +1173,19 @@ export const useChatStore = createPersistStore(
                 stream: true,
               },
               onUpdate(message) {
+                // 所有模型：更新各自的 compareResponse
                 get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
                   r.content = message;
                 });
                 CompareRequestPool.setContent(requestId, modelKey, message);
+
+                // 主模型：同时写入 botMessage.content（确保消息始终可持久化）
+                if (isPrimary) {
+                  get().updateTargetSession(session, (session) => {
+                    const msg = session.messages.find(m => m.id === botMessage.id);
+                    if (msg) msg.content = message;
+                  });
+                }
               },
               onFinish(message) {
                 const latency = Date.now() - (CompareRequestPool.getStartTime(requestId, modelKey) || Date.now());
@@ -1169,6 +1196,17 @@ export const useChatStore = createPersistStore(
                 });
                 CompareRequestPool.setStatus(requestId, modelKey, 'done');
                 ChatControllerPool.removeCompare(requestId, modelKey);
+
+                // 主模型：最终确认 content 和 date
+                if (isPrimary) {
+                  get().updateTargetSession(session, (session) => {
+                    const msg = session.messages.find(m => m.id === botMessage.id);
+                    if (msg) {
+                      msg.content = message;
+                      msg.date = new Date().toLocaleString();
+                    }
+                  });
+                }
               },
               onError(error) {
                 get().updateCompareResponse(session.id, requestId, modelKey, (r) => {
@@ -1199,11 +1237,15 @@ export const useChatStore = createPersistStore(
             const msg = session.messages.find(m => m.id === botMessage.id);
             if (msg) msg.streaming = false;
           });
+
+          // 与正常模式保持一致：更新 session 元数据并触发标题生成
+          get().onNewMessage(botMessage, session);
         });
       },
 
       /**
        * 采纳某个模型的回复作为正式回复
+       * 就地替换 botMessage.content，而不是创建新消息
        */
       adoptCompareResult(modelKey: string): void {
         const session = get().currentSession();
@@ -1211,7 +1253,7 @@ export const useChatStore = createPersistStore(
 
         const messages = session.messages;
 
-        // 找到最近的对比消息对
+        // 找到最近的对比消息
         let lastIndex = messages.length - 1;
         while (lastIndex >= 0 && !messages[lastIndex].compareResponses) {
           lastIndex--;
@@ -1219,40 +1261,35 @@ export const useChatStore = createPersistStore(
 
         if (lastIndex < 0) return;
 
-        const botMessage = messages[lastIndex];
-        const userMessage = messages[lastIndex - 1];
+        const botMsg = messages[lastIndex];
+        const userMsgIndex = lastIndex - 1;
 
-        if (!botMessage.compareResponses) return;
+        if (!botMsg.compareResponses) return;
 
-        const selectedResponse = botMessage.compareResponses.find(
+        const selectedResponse = botMsg.compareResponses.find(
           (r) => `${r.model}@${r.providerName.toLowerCase()}` === modelKey.toLowerCase()
         );
         if (!selectedResponse) return;
 
-        // 创建新的消息对（采纳后的正式回复）
-        const newUserMessage = createMessage({
-          ...userMessage,
-          id: nanoid(),
-          compareMeta: undefined,
-          content: userMessage.content,
-        });
-
-        const newBotMessage = createMessage({
-          role: 'assistant',
-          content: selectedResponse.content,
-          model: selectedResponse.model as ModelType,
-          streaming: false,
-        });
-
-        // 替换原消息
+        // 就地替换：更新 content 和 model，清除对比数据
         get().updateTargetSession(session, (session) => {
-          session.messages[lastIndex - 1] = newUserMessage;
-          session.messages[lastIndex] = newBotMessage;
+          const bot = session.messages[lastIndex];
+          const user = session.messages[userMsgIndex];
+
+          if (bot) {
+            bot.content = selectedResponse.content;
+            bot.model = selectedResponse.model as ModelType;
+            bot.compareResponses = undefined;
+          }
+          if (user) {
+            user.compareMeta = undefined;
+          }
         });
 
         // 清理 CompareRequestPool
-        if (botMessage.compareMeta) {
-          CompareRequestPool.remove(botMessage.compareMeta.requestId);
+        const userMsg = messages[userMsgIndex];
+        if (userMsg?.compareMeta) {
+          CompareRequestPool.remove(userMsg.compareMeta.requestId);
         }
 
         showToast(`已采纳 ${selectedResponse.model} 的回复`);

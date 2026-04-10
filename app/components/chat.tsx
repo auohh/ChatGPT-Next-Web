@@ -2425,19 +2425,6 @@ function ChatImpl() {
                           )}
                           <div className={styles["chat-message-item"]}>
                             {/* 对比模式：显示多模型对比视图 */}
-                            {(() => {
-                              if (message.compareResponses || message.compareMeta) {
-                                console.log("[CompareDebug] message has compare data:", {
-                                  id: message.id,
-                                  role: message.role,
-                                  hasCompareResponses: !!message.compareResponses,
-                                  hasCompareMeta: !!message.compareMeta,
-                                  responsesCount: message.compareResponses?.length,
-                                  compareMeta: message.compareMeta,
-                                });
-                              }
-                              return null;
-                            })()}
                             {message.compareResponses ? (
                               <ErrorBoundary>
                                 <CompareView
